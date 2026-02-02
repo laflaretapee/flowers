@@ -9,92 +9,79 @@
 </head>
 <body>
 
-<header class="site-header">
+  <header class="site-header">
     <div class="container header-inner">
-        <a href="index.html" class="logo">
-            <img src="assets/images/logo.png" alt="Цветочная Лавка">
-        </a>
-        <nav class="nav">
-            <a href="index.html#catalog">Каталог</a>
-            <a href="index.html#occasions">Повод</a>
-            <a href="index.html#delivery">Доставка</a>
-            <a href="index.html#contacts">Контакты</a>
-        </nav>
-        <a href="https://t.me/your_bot" class="header-phone" target="_blank">
-            +7 (999) 123‑45‑67
-        </a>
-        <button class="burger" aria-label="Открыть меню">
-            <span></span><span></span><span></span>
-        </button>
+      <a href="index.html" class="logo">
+        <img src="assets/images/logo.png" alt="Цветочная Лавка">
+      </a>
+
+      <nav class="nav">
+        <a href="catalog.html">Каталог</a>
+        <a href="index.html#occasions">Повод</a>
+        <a href="index.html#delivery">Доставка</a>
+        <a href="index.html#contacts">Контакты</a>
+      </nav>
+
+      <a href="https://t.me/your_bot" class="header-phone" target="_blank">
+        +7 (999) 123‑45‑67
+      </a>
+
+      <button class="burger" aria-label="Открыть меню">
+        <span></span><span></span><span></span>
+      </button>
     </div>
-</header>
+  </header>
 
-<section class="section">
+<section class="section catalog-page">
     <div class="container">
-        <h2 class="section-title">Каталог букетов</h2>
-        <p class="section-subtitle">Выберите букет или соберите свой через Telegram-бота</p>
-        <div class="grid grid-3 catalog-grid">
-
-        <article class="card product-card">
-            <div class="product-photo">
-                <img src="https://via.placeholder.com/400x300?text=Розы+классические" alt="Розы классические">
-            </div>
-            <h3>Розы классические</h3>
-            <p class="product-desc">Красные розы, оформление лентой</p>
-            <div class="product-meta">
-                <span class="product-price">3 500 ₽</span>
-                <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
-            </div>
-        </article>
-
-        <article class="card product-card">
-            <div class="product-photo">
-                <img src="https://via.placeholder.com/400x300?text=Тюльпаны" alt="Тюльпаны">
-            </div>
-            <h3>Тюльпаны</h3>
-            <p class="product-desc">Свежие тюльпаны, сезонное предложение</p>
-            <div class="product-meta">
-                <span class="product-price">2 200 ₽</span>
-                <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
-            </div>
-        </article>
-
-        <article class="card product-card">
-            <div class="product-photo">
-                <img src="https://via.placeholder.com/400x300?text=Авторский+букет" alt="Авторский букет">
-            </div>
-            <h3>Авторский букет</h3>
-            <p class="product-desc">Индивидуальный подбор цветов</p>
-            <div class="product-meta">
-                <span class="product-price">5 000 ₽</span>
-                <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
-            </div>
-        </article>
-
+        <h2 class="section-title">Полный каталог</h2>
+        <p class="section-subtitle">Все наши букеты и композиции</p>
+        
+        <!-- Фильтры категорий можно добавить здесь позже -->
+        
+        <div id="full-catalog-grid" class="grid grid-3 catalog-grid">
+            <!-- Товар будет загружаться через JS -->
+            <div class="loading">Загрузка товаров...</div>
         </div>
     </div>
 </section>
 
-<footer id="contacts" class="site-footer">
+  <footer id="contacts" class="site-footer">
     <div class="container footer-inner">
-        <div>
-            <div class="logo footer-logo">Цветочная Лавка</div>
-            <p>Авторские букеты с доставкой по городу.</p>
+      <div class="footer-branding">
+        <a href="index.html" class="logo footer-logo-link">
+          <img src="assets/images/logo.png" alt="Цветочная Лавка" class="footer-logo-img">
+        </a>
+        <p>Авторские букеты с доставкой по городу.</p>
+      </div>
+      <div class="footer-block">
+        <h3>Контакты</h3>
+        <p class="footer-phone">+7 (999) 123‑45‑67</p>
+        <p class="footer-address">Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120</p>
+      </div>
+      <div class="footer-block">
+        <h3>Мы в соцсетях</h3>
+        <div class="social-links">
+          <a href="#" class="social-link instagram" target="_blank" aria-label="Instagram">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+          </a>
+          <a href="#" class="social-link telegram" target="_blank" aria-label="Telegram">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"></path><path d="M22 2l-7 20-4-9-9-4 20-7z"></path></svg>
+          </a>
+          <a href="#" class="social-link vk" target="_blank" aria-label="VK">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
+          </a>
         </div>
-        <div class="footer-block">
-            <h3>Контакты</h3>
-            <p>+7 (999) 123‑45‑67</p>
-            <p>Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120</p>
-        <div class="footer-block">
-            <h3>Мы в соцсетях</h3>
-            <p>Instagram, Telegram, VK</p>
-        </div>
+      </div>
     </div>
     <div class="container footer-bottom">
+      <div class="copyright">
         <span>© 2026 Цветочная Лавка</span>
         <span>Сделано с любовью к цветам</span>
+      </div>
+      <a href="privacy-policy.html" class="privacy-link">Политика конфиденциальности</a>
     </div>
-</footer>
+  </footer>
 
 </body>
 </html>

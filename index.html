@@ -15,7 +15,7 @@
       </a>
 
       <nav class="nav">
-        <a href="#catalog">Каталог</a>
+        <a href="catalog.html">Каталог</a>
         <a href="#occasions">Повод</a>
         <a href="#delivery">Доставка</a>
         <a href="#contacts">Контакты</a>
@@ -48,6 +48,8 @@
 
     <!-- HERO -->
     <section class="hero">
+      <div class="hero-bg"></div> <!-- Фоновое изображение -->
+      <div class="hero-overlay"></div> <!-- Затемнение -->
       <div class="container hero-inner">
         <div class="hero-text">
           <p class="hero-label">Доставка за 90 минут</p>
@@ -56,7 +58,7 @@
             Собираем авторские букеты из свежих цветов и привозим точно ко времени.
           </p>
           <div class="hero-actions">
-            <a href="#catalog" class="btn btn-primary">Выбрать букет</a>
+            <a href="catalog.html" class="btn btn-primary">Выбрать букет</a>
             <a href="https://t.me/your_bot" class="btn btn-ghost" target="_blank">Собрать свой</a>
           </div>
           <ul class="hero-benefits">
@@ -64,13 +66,6 @@
             <li>Оплата онлайн и при получении</li>
             <li>Работаем 24/7</li>
           </ul>
-        </div>
-        <div class="hero-image">
-          <img src="https://via.placeholder.com/800x1000?text=Фото+главного+букета" alt="Красивый букет">
-          <div class="hero-badge">
-            <span>850+</span>
-            довольных клиентов
-          </div>
         </div>
       </div>
     </section>
@@ -114,35 +109,11 @@
         </p>
 
         <div class="grid grid-3">
-          <article class="card product-card">
-            <div class="product-photo"></div>
-            <h3>«Утро в Париже»</h3>
-            <p class="product-desc">Пионы, розы и эвкалипт в нежной гамме.</p>
-            <div class="product-meta">
-              <span class="product-price">4 500 ₽</span>
-              <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
-            </div>
-          </article>
-
-          <article class="card product-card">
-            <div class="product-photo"></div>
-            <h3>«Северное сияние»</h3>
-            <p class="product-desc">Контрастная композиция из ирисов и роз.</p>
-            <div class="product-meta">
-              <span class="product-price">3 900 ₽</span>
-              <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
-            </div>
-          </article>
-
-          <article class="card product-card">
-            <div class="product-photo"></div>
-            <h3>«Кремовый закат»</h3>
-            <p class="product-desc">Розы, гвоздики и ранункулюсы.</p>
-            <div class="product-meta">
-              <span class="product-price">5 200 ₽</span>
-              <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
-            </div>
-          </article>
+          <!-- Товары загружаются через JS -->
+        </div>
+        
+        <div style="text-align: center; margin-top: 32px;">
+            <a href="catalog.html" class="btn btn-primary">Смотреть весь каталог</a>
         </div>
       </div>
     </section>
@@ -203,23 +174,39 @@
 
   <footer id="contacts" class="site-footer">
     <div class="container footer-inner">
-      <div>
-        <div class="logo footer-logo">Цветочная Лавка</div>
+      <div class="footer-branding">
+        <a href="#" class="logo footer-logo-link">
+          <img src="assets/images/logo.png" alt="Цветочная Лавка" class="footer-logo-img">
+        </a>
         <p>Авторские букеты с доставкой по городу.</p>
       </div>
       <div class="footer-block">
         <h3>Контакты</h3>
-        <p>+7 (999) 123‑45‑67</p>
-        <p>Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120</p>
+        <p class="footer-phone">+7 (999) 123‑45‑67</p>
+        <p class="footer-address">Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120</p>
       </div>
       <div class="footer-block">
         <h3>Мы в соцсетях</h3>
-        <p>Instagram, Telegram, VK</p>
+        <div class="social-links">
+          <!-- Иконки будут обновлены через JS, но здесь базовая структура -->
+          <a href="#" class="social-link instagram" target="_blank" aria-label="Instagram">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+          </a>
+          <a href="#" class="social-link telegram" target="_blank" aria-label="Telegram">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"></path><path d="M22 2l-7 20-4-9-9-4 20-7z"></path></svg>
+          </a>
+          <a href="#" class="social-link vk" target="_blank" aria-label="VK">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
+          </a>
+        </div>
       </div>
     </div>
     <div class="container footer-bottom">
-      <span>© 2026 Цветочная Лавка</span>
-      <span>Сделано с любовью к цветам</span>
+      <div class="copyright">
+        <span>© 2026 Цветочная Лавка</span>
+        <span>Сделано с любовью к цветам</span>
+      </div>
+      <a href="privacy-policy.html" class="privacy-link">Политика конфиденциальности</a>
     </div>
   </footer>
 </body>

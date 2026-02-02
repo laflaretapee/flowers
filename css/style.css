@@ -63,7 +63,6 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 10px 0; /* чуть компактнее шапка на десктопе */
 }
 
 .logo {
@@ -182,14 +181,44 @@ a {
 /* hero */
 
 .hero {
-  padding: 56px 0 64px;
+  position: relative;
+  min-height: 600px;
+  display: flex;
+  align-items: center;
+  padding: 80px 0;
+  overflow: hidden;
+  color: #fff;
+}
+
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-size: cover;
+  background-position: center;
+  z-index: 1;
+}
+
+.hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4); /* Затемнение 40% */
+  z-index: 2;
 }
 
 .hero-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 40px;
-  align-items: center;
+  position: relative;
+  z-index: 3;
+  width: 100%;
+}
+
+.hero-text {
+  max-width: 600px;
 }
 
 .hero-label {
@@ -197,60 +226,45 @@ a {
   align-items: center;
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(244, 107, 138, 0.1);
-  color: var(--primary);
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+  color: #fff;
   font-size: 12px;
   margin-bottom: 16px;
 }
 
 .hero h1 {
-  font-size: clamp(32px, 4vw, 40px);
+  font-size: clamp(36px, 5vw, 56px);
   line-height: 1.1;
-  margin: 0 0 16px;
+  margin: 0 0 20px;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .hero-subtitle {
-  margin: 0 0 24px;
-  color: var(--text-muted);
-  max-width: 360px;
+  margin: 0 0 32px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 18px;
+  max-width: 480px;
+  line-height: 1.5;
 }
 
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 10px 20px;
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(244, 107, 138, 0.35);
-}
-
-.btn-primary:hover {
-  background: var(--primary-dark);
+  gap: 16px;
+  margin-bottom: 32px;
 }
 
 .btn-ghost {
-  background: transparent;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  backdrop-filter: blur(4px);
 }
 
-.btn-small {
-  padding: 8px 14px;
-  font-size: 13px;
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .hero-benefits {
@@ -259,44 +273,13 @@ a {
   margin: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  font-size: 13px;
-  color: var(--text-muted);
+  gap: 16px 24px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.hero-image {
-  position: relative;
-  justify-self: center;
-}
-
-.hero-photo {
-  width: 100%;
-  max-width: 360px;
-  aspect-ratio: 4 / 5;
-  border-radius: 40px;
-  background: linear-gradient(145deg, #ffe3ea, #fff7ec);
-  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.12);
-}
-
-.hero-badge {
-  position: absolute;
-  right: -10px;
-  bottom: 40px;
-  background: #fff;
-  border-radius: 18px;
-  padding: 10px 16px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
-  font-size: 12px;
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.hero-badge span {
-  font-weight: 700;
-  color: var(--primary);
-  font-size: 16px;
-}
+/* Remove old hero styles that are no longer needed */
+/* .hero-image, .hero-photo, .hero-badge removed */
 
 /* sections */
 
@@ -444,32 +427,66 @@ a {
   font-size: 15px;
 }
 
+.footer-logo-img {
+  height: 80px;
+  width: auto;
+  margin-bottom: 12px;
+  filter: brightness(0) invert(1); /* белый цвет для логотипа на темном фоне */
+  opacity: 0.9;
+}
+
+.social-links {
+  display: flex;
+  gap: 12px;
+}
+
+.social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: #fff;
+  transition: all 0.2s ease;
+}
+
+.social-link:hover {
+  background: var(--primary);
+  transform: translateY(-2px);
+}
+
 .footer-bottom {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 24px;
-  padding-top: 16px;
+  padding-top: 24px;
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  align-items: center;
+  font-size: 13px;
   color: #b3b3b3;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
-.category-card img,
-.product-photo img {
-  width: 100%;
-  height: auto;
-  border-radius: var(--border-radius-md);
-  object-fit: cover;
+.copyright {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-
-.logo img {
-  height: 110px;             /* ещё крупнее логотип на десктопе */
-  width: auto;
-  max-width: 100%;           /* не выходит за границы по ширине */
-  display: block;
+.privacy-link {
+  color: #b3b3b3;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+  transition: color 0.2s ease;
 }
 
+.privacy-link:hover {
+  color: #fff;
+  text-decoration-color: #fff;
+}
 
 /* catalog page */
 
@@ -613,14 +630,6 @@ a {
 /* adaptive */
 
 @media (max-width: 900px) {
-  .hero-inner {
-    grid-template-columns: 1fr;
-  }
-
-  .hero-image {
-    order: -1;
-  }
-
   .grid-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -683,10 +692,6 @@ a {
 
   .burger {
     display: inline-flex;
-  }
-
-  .hero {
-    padding-top: 32px;
   }
 
   .hero-actions {

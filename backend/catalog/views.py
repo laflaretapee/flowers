@@ -69,12 +69,14 @@ def site_content(request):
     products = Product.objects.filter(is_active=True, is_popular=True)[:6]
     reviews = Review.objects.filter(is_published=True)[:6]
     
+    context = {'request': request}
+    
     return Response({
-        'settings': SiteSettingsSerializer(settings).data,
-        'hero': HeroSectionSerializer(hero).data,
-        'promo': PromoBannerSerializer(promo).data if promo.is_active else None,
-        'delivery': DeliveryInfoSerializer(delivery).data,
-        'categories': CategorySerializer(categories, many=True).data,
-        'products': ProductSerializer(products, many=True).data,
-        'reviews': ReviewSerializer(reviews, many=True).data,
+        'settings': SiteSettingsSerializer(settings, context=context).data,
+        'hero': HeroSectionSerializer(hero, context=context).data,
+        'promo': PromoBannerSerializer(promo, context=context).data if promo.is_active else None,
+        'delivery': DeliveryInfoSerializer(delivery, context=context).data,
+        'categories': CategorySerializer(categories, many=True, context=context).data,
+        'products': ProductSerializer(products, many=True, context=context).data,
+        'reviews': ReviewSerializer(reviews, many=True, context=context).data,
     })
