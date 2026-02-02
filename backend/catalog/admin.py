@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import Category, Product, ProductImage, Review, Order, OrderItem
+from .models import (
+    Category, Product, ProductImage, Review, Order, OrderItem,
+    SiteSettings, HeroSection, PromoBanner, DeliveryInfo
+)
 
 
 class ProductImageInline(admin.TabularInline):
@@ -22,9 +25,9 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'price', 'is_active', 'is_popular', 'order']
-    list_filter = ['is_active', 'is_popular', 'category']
-    list_editable = ['price', 'is_active', 'is_popular', 'order']
+    list_display = ['name', 'category', 'price', 'hide_price', 'is_active', 'is_popular', 'order']
+    list_filter = ['is_active', 'is_popular', 'hide_price', 'category']
+    list_editable = ['price', 'hide_price', 'is_active', 'is_popular', 'order']
     search_fields = ['name', 'description']
     prepopulated_fields = {'slug': ('name',)}
     inlines = [ProductImageInline]
@@ -33,7 +36,7 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('name', 'slug', 'category', 'description', 'short_description')
         }),
         ('Цена и изображение', {
-            'fields': ('price', 'image')
+            'fields': ('price', 'hide_price', 'image')
         }),
         ('Настройки', {
             'fields': ('is_active', 'is_popular', 'order')
@@ -70,3 +73,75 @@ class OrderAdmin(admin.ModelAdmin):
 
 
 admin.site.register(ProductImage)
+
+
+@admin.register(SiteSettings)
+class SiteSettingsAdmin(admin.ModelAdmin):
+    list_display = ['site_name', 'phone']
+    
+    def has_add_permission(self, request):
+        return not SiteSettings.objects.exists()
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(HeroSection)
+class HeroSectionAdmin(admin.ModelAdmin):
+    list_display = ['title', 'is_active']
+    fieldsets = (
+        ('Основной контент', {
+            'fields': ('label', 'title', 'subtitle', 'image')
+        }),
+        ('Кнопки', {
+            'fields': ('button_text', 'button_link', 'secondary_button_text', 'secondary_button_link')
+        }),
+        ('Бейдж', {
+            'fields': ('badge_number', 'badge_text')
+        }),
+        ('Преимущества', {
+            'fields': ('benefit_1', 'benefit_2', 'benefit_3')
+        }),
+        ('Настройки', {
+            'fields': ('is_active',)
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        return not HeroSection.objects.exists()
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PromoBanner)
+class PromoBannerAdmin(admin.ModelAdmin):
+    list_display = ['title', 'is_active']
+    
+    def has_add_permission(self, request):
+        return not PromoBanner.objects.exists()
+    
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DeliveryInfo)
+class DeliveryInfoAdmin(admin.ModelAdmin):
+    list_display = ['title']
+    fieldsets = (
+        ('Заголовок', {
+            'fields': ('title', 'subtitle')
+        }),
+        ('Преимущества', {
+            'fields': ('benefit_1', 'benefit_2', 'benefit_3')
+        }),
+        ('Шаги', {
+            'fields': ('step_1', 'step_2', 'step_3')
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        return not DeliveryInfo.objects.exists()
+    
+    def has_delete_permission(self, request, obj=None):
+        return False

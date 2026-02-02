@@ -1,9 +1,15 @@
 from rest_framework import viewsets, filters
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Category, Product, Review
-from .serializers import CategorySerializer, ProductSerializer, ReviewSerializer
+from .models import (
+    Category, Product, Review,
+    SiteSettings, HeroSection, PromoBanner, DeliveryInfo
+)
+from .serializers import (
+    CategorySerializer, ProductSerializer, ReviewSerializer,
+    SiteSettingsSerializer, HeroSectionSerializer, PromoBannerSerializer, DeliveryInfoSerializer
+)
 from django.db.models import Avg
 
 
@@ -50,3 +56,25 @@ class ReviewViewSet(viewsets.ModelViewSet):
         if product_id:
             queryset = queryset.filter(product_id=product_id)
         return queryset.order_by('-created_at')
+
+
+@api_view(['GET'])
+def site_content(request):
+    """Получить весь контент сайта одним запросом"""
+    settings = SiteSettings.get_settings()
+    hero = HeroSection.get_hero()
+    promo = PromoBanner.get_promo()
+    delivery = DeliveryInfo.get_delivery_info()
+    categories = Category.objects.filter(is_active=True)
+    products = Product.objects.filter(is_active=True, is_popular=True)[:6]
+    reviews = Review.objects.filter(is_published=True)[:6]
+    
+    return Response({
+        'settings': SiteSettingsSerializer(settings).data,
+        'hero': HeroSectionSerializer(hero).data,
+        'promo': PromoBannerSerializer(promo).data if promo.is_active else None,
+        'delivery': DeliveryInfoSerializer(delivery).data,
+        'categories': CategorySerializer(categories, many=True).data,
+        'products': ProductSerializer(products, many=True).data,
+        'reviews': ReviewSerializer(reviews, many=True).data,
+    })
