@@ -1,0 +1,173 @@
+"""
+Интеграция с API такси для доставки
+"""
+import requests
+from django.conf import settings
+import logging
+from decimal import Decimal
+
+logger = logging.getLogger(__name__)
+
+
+class TaxiDeliveryIntegration:
+    """Класс для работы с доставкой через такси"""
+    
+    def __init__(self):
+        # Настройки для разных сервисов такси
+        self.yandex_taxi_api_key = getattr(settings, 'YANDEX_TAXI_API_KEY', '')
+        self.yandex_taxi_clid = getattr(settings, 'YANDEX_TAXI_CLID', '')
+        self.uber_api_key = getattr(settings, 'UBER_API_KEY', '')
+        self.delivery_service = getattr(settings, 'TAXI_DELIVERY_SERVICE', 'yandex')  # yandex, uber, custom
+    
+    def calculate_delivery_cost(self, from_address, to_address, order_weight=1):
+        """
+        Расчет стоимости доставки
+        
+        Args:
+            from_address: Адрес магазина
+            to_address: Адрес доставки
+            order_weight: Вес заказа в кг (по умолчанию 1 кг для букета)
+        
+        Returns:
+            dict с информацией о доставке:
+            {
+                'cost': стоимость в рублях,
+                'duration': время в минутах,
+                'available': доступна ли доставка
+            }
+        """
+        if self.delivery_service == 'yandex':
+            return self._calculate_yandex_taxi(from_address, to_address, order_weight)
+        elif self.delivery_service == 'uber':
+            return self._calculate_uber(from_address, to_address, order_weight)
+        else:
+            # Базовая оценка для других сервисов
+            return self._estimate_delivery(from_address, to_address)
+    
+    def _calculate_yandex_taxi(self, from_address, to_address, order_weight):
+        """Расчет через Yandex Taxi API"""
+        if not self.yandex_taxi_api_key:
+            logger.warning("Yandex Taxi API ключ не настроен")
+            return self._estimate_delivery(from_address, to_address)
+        
+        try:
+            # Yandex Taxi API для расчета стоимости
+            # Требуется регистрация в партнерской программе
+            url = "https://taxi-api.yandex.net/v1/estimate"
+            headers = {
+                'Authorization': f'Bearer {self.yandex_taxi_api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Нужно получить координаты адресов
+            from_coords = self._geocode_address(from_address)
+            to_coords = self._geocode_address(to_address)
+            
+            if not from_coords or not to_coords:
+                return self._estimate_delivery(from_address, to_address)
+            
+            data = {
+                'route': [
+                    {'lat': from_coords['lat'], 'lon': from_coords['lon']},
+                    {'lat': to_coords['lat'], 'lon': to_coords['lon']}
+                ],
+                'requirements': {
+                    'cargo_options': {
+                        'cargo_type': 'flowers',
+                        'weight': order_weight
+                    }
+                }
+            }
+            
+            response = requests.post(url, json=data, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                result = response.json()
+                options = result.get('options', [])
+                if options:
+                    cheapest = min(options, key=lambda x: x.get('price', {}).get('total', 0))
+                    return {
+                        'cost': Decimal(str(cheapest['price']['total'])),
+                        'duration': cheapest.get('time', {}).get('minutes', 30),
+                        'available': True,
+                        'service': 'yandex_taxi'
+                    }
+        except Exception as e:
+            logger.error(f"Ошибка расчета доставки через Yandex Taxi: {e}")
+        
+        return self._estimate_delivery(from_address, to_address)
+    
+    def _calculate_uber(self, from_address, to_address, order_weight):
+        """Расчет через Uber API"""
+        if not self.uber_api_key:
+            logger.warning("Uber API ключ не настроен")
+            return self._estimate_delivery(from_address, to_address)
+        
+        # Реализация для Uber API
+        # Требуется регистрация в Uber для бизнеса
+        return self._estimate_delivery(from_address, to_address)
+    
+    def _geocode_address(self, address):
+        """Геокодирование адреса (получение координат)"""
+        try:
+            # Используем Yandex Geocoder API
+            url = "https://geocode-maps.yandex.ru/1.x/"
+            params = {
+                'geocode': address,
+                'format': 'json',
+                'apikey': getattr(settings, 'YANDEX_GEOCODER_API_KEY', '')
+            }
+            
+            response = requests.get(url, params=params, timeout=5)
+            data = response.json()
+            
+            if 'response' in data and 'GeoObjectCollection' in data['response']:
+                features = data['response']['GeoObjectCollection'].get('featureMember', [])
+                if features:
+                    pos = features[0]['GeoObject']['Point']['pos']
+                    lon, lat = map(float, pos.split())
+                    return {'lat': lat, 'lon': lon}
+        except Exception as e:
+            logger.error(f"Ошибка геокодирования адреса {address}: {e}")
+        
+        return None
+    
+    def _estimate_delivery(self, from_address, to_address):
+        """Базовая оценка доставки (если API недоступно)"""
+        # Простая оценка: базовая стоимость + расстояние
+        base_cost = Decimal('200')  # Базовая стоимость доставки
+        estimated_duration = 45  # Примерное время в минутах
+        
+        return {
+            'cost': base_cost,
+            'duration': estimated_duration,
+            'available': True,
+            'service': 'estimated',
+            'note': 'Окончательная стоимость будет уточнена при оформлении заказа'
+        }
+    
+    def create_delivery_order(self, order_id, from_address, to_address, order_weight=1):
+        """
+        Создание заказа на доставку через такси
+        
+        Args:
+            order_id: ID заказа в системе
+            from_address: Адрес магазина
+            to_address: Адрес доставки
+            order_weight: Вес заказа
+        
+        Returns:
+            dict с информацией о заказе доставки
+        """
+        delivery_info = self.calculate_delivery_cost(from_address, to_address, order_weight)
+        
+        # Здесь можно создать заказ в системе такси
+        # Пока возвращаем информацию о доставке
+        
+        return {
+            'order_id': order_id,
+            'delivery_cost': float(delivery_info['cost']),
+            'estimated_duration': delivery_info['duration'],
+            'status': 'pending',
+            'service': delivery_info.get('service', 'estimated')
+        }

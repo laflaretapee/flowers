@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Цветочная Лавка — доставка цветов</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/main.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#" class="logo">
+        <img src="assets/images/logo.png" alt="Цветочная Лавка — Раевка">
+      </a>
+
+      <nav class="nav">
+        <a href="#catalog">Каталог</a>
+        <a href="#occasions">Повод</a>
+        <a href="#delivery">Доставка</a>
+        <a href="#contacts">Контакты</a>
+      </nav>
+
+      <a href="https://t.me/your_bot" class="header-phone" target="_blank">
+        +7 (999) 123‑45‑67
+      </a>
+
+      <button class="burger" aria-label="Открыть меню">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ПРОМО БАННЕР -->
+    <section class="promo-banner">
+      <div class="container">
+        <div class="promo-content">
+          <span class="promo-icon">🎁</span>
+          <div>
+            <strong>Скидка 10% за подписку!</strong>
+            <span>Подпишитесь на нашу группу через бота и получите скидку на первый заказ</span>
+          </div>
+          <a href="https://t.me/your_bot" class="btn btn-primary btn-small" target="_blank">Подписаться</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-text">
+          <p class="hero-label">Доставка за 90 минут</p>
+          <h1>Живые эмоции в каждом букете</h1>
+          <p class="hero-subtitle">
+            Собираем авторские букеты из свежих цветов и привозим точно ко времени.
+          </p>
+          <div class="hero-actions">
+            <a href="#catalog" class="btn btn-primary">Выбрать букет</a>
+            <a href="https://t.me/your_bot" class="btn btn-ghost" target="_blank">Собрать свой</a>
+          </div>
+          <ul class="hero-benefits">
+            <li>Фото букета перед отправкой</li>
+            <li>Оплата онлайн и при получении</li>
+            <li>Работаем 24/7</li>
+          </ul>
+        </div>
+        <div class="hero-image">
+          <img src="https://via.placeholder.com/800x1000?text=Фото+главного+букета" alt="Красивый букет">
+          <div class="hero-badge">
+            <span>850+</span>
+            довольных клиентов
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- КАТЕГОРИИ -->
+    <section id="occasions" class="section">
+      <div class="container">
+        <h2 class="section-title">Букеты под любой повод</h2>
+        <p class="section-subtitle">
+          Подборки, которые помогут быстро определиться с подарком.
+        </p>
+
+        <div class="grid grid-3">
+          <article class="card category-card">
+            <img src="https://via.placeholder.com/400x300?text=Для+неё" alt="Категория Для неё">
+            <h3>Для неё</h3>
+            <p>Нежные композиции в пастельных оттенках.</p>
+          </article>
+
+          <article class="card category-card">
+            <img src="https://via.placeholder.com/400x300?text=Для+него" alt="Категория Для него">
+            <h3>Для него</h3>
+            <p>Лаконичные букеты в строгой палитре.</p>
+          </article>
+
+          <article class="card category-card">
+            <img src="https://via.placeholder.com/400x300?text=К+событию" alt="Категория К событию">
+            <h3>К событию</h3>
+            <p>Дни рождения, свадьбы, корпоративы и многое другое.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- КАТАЛОГ -->
+    <section id="catalog" class="section section-muted">
+      <div class="container">
+        <h2 class="section-title">Популярные букеты</h2>
+        <p class="section-subtitle">
+          Хиты продаж, которые выбирают чаще всего.
+        </p>
+
+        <div class="grid grid-3">
+          <article class="card product-card">
+            <div class="product-photo"></div>
+            <h3>«Утро в Париже»</h3>
+            <p class="product-desc">Пионы, розы и эвкалипт в нежной гамме.</p>
+            <div class="product-meta">
+              <span class="product-price">4 500 ₽</span>
+              <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
+            </div>
+          </article>
+
+          <article class="card product-card">
+            <div class="product-photo"></div>
+            <h3>«Северное сияние»</h3>
+            <p class="product-desc">Контрастная композиция из ирисов и роз.</p>
+            <div class="product-meta">
+              <span class="product-price">3 900 ₽</span>
+              <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
+            </div>
+          </article>
+
+          <article class="card product-card">
+            <div class="product-photo"></div>
+            <h3>«Кремовый закат»</h3>
+            <p class="product-desc">Розы, гвоздики и ранункулюсы.</p>
+            <div class="product-meta">
+              <span class="product-price">5 200 ₽</span>
+              <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ДОСТАВКА -->
+    <section id="delivery" class="section">
+      <div class="container delivery-grid">
+        <div>
+          <h2 class="section-title">Доставка без задержек</h2>
+          <p class="section-subtitle">
+            Привезём букет в течение 90 минут по городу или ко времени мероприятия.
+          </p>
+          <ul class="list">
+            <li>Бесплатная доставка от 5 000 ₽</li>
+            <li>Фото готового букета в мессенджер</li>
+            <li>Аккуратная упаковка и фирменная открытка</li>
+          </ul>
+        </div>
+        <div class="delivery-card">
+          <h3>Как это работает</h3>
+          <ol class="steps">
+            <li>Вы выбираете букет или собираете свой.</li>
+            <li>Оставляете контакты и адрес.</li>
+            <li>Мы собираем и отправляем курьера.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ОТЗЫВЫ -->
+    <section class="section section-muted">
+      <div class="container">
+        <h2 class="section-title">Отзывы клиентов</h2>
+        <div class="grid grid-3">
+          <article class="card review-card">
+            <p>
+              «Очень красивые букеты, привезли ровно ко времени, как и просила.
+              Буду заказывать ещё!»
+            </p>
+            <span class="review-author">Анна</span>
+          </article>
+          <article class="card review-card">
+            <p>
+              «Отличный сервис и приятные флористы. Фото букета прислали заранее.»
+            </p>
+            <span class="review-author">Игорь</span>
+          </article>
+          <article class="card review-card">
+            <p>
+              «Нашли нужный оттенок роз под оформление свадьбы, всё выглядело идеально.»
+            </p>
+            <span class="review-author">Мария</span>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer id="contacts" class="site-footer">
+    <div class="container footer-inner">
+      <div>
+        <div class="logo footer-logo">Цветочная Лавка</div>
+        <p>Авторские букеты с доставкой по городу.</p>
+      </div>
+      <div class="footer-block">
+        <h3>Контакты</h3>
+        <p>+7 (999) 123‑45‑67</p>
+        <p>Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120</p>
+      </div>
+      <div class="footer-block">
+        <h3>Мы в соцсетях</h3>
+        <p>Instagram, Telegram, VK</p>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <span>© 2026 Цветочная Лавка</span>
+      <span>Сделано с любовью к цветам</span>
+    </div>
+  </footer>
+</body>
+</html>
