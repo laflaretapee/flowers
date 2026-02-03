@@ -174,4 +174,4 @@ python manage.py run_bot
 
 ## Контакты
 
-Для вопросов и поддержки обращайтесь к разработчику.
+тг: dinar_ziyazetdinov
