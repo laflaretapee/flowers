@@ -132,6 +132,43 @@ class TaxiDeliveryIntegration:
         
         return None
     
+    def reverse_geocode(self, lat, lon):
+        """Обратное геокодирование: координаты → адрес"""
+        try:
+            # Используем Yandex Geocoder API для обратного геокодирования
+            url = "https://geocode-maps.yandex.ru/1.x/"
+            params = {
+                'geocode': f"{lon},{lat}",  # Важно: сначала долгота, потом широта
+                'format': 'json',
+                'apikey': getattr(settings, 'YANDEX_GEOCODER_API_KEY', ''),
+                'results': 1,
+                'kind': 'house'  # Ищем дома
+            }
+            
+            response = requests.get(url, params=params, timeout=5)
+            data = response.json()
+            
+            if 'response' in data and 'GeoObjectCollection' in data['response']:
+                features = data['response']['GeoObjectCollection'].get('featureMember', [])
+                if features:
+                    # Получаем полный адрес
+                    address_components = features[0]['GeoObject']['metaDataProperty']['GeocoderMetaData']['Address']['Components']
+                    address_parts = [comp['name'] for comp in address_components]
+                    full_address = ', '.join(address_parts)
+                    
+                    # Также можно получить красивый форматированный адрес
+                    formatted_address = features[0]['GeoObject']['metaDataProperty']['GeocoderMetaData']['text']
+                    
+                    return {
+                        'formatted_address': formatted_address,
+                        'full_address': full_address,
+                        'components': address_components
+                    }
+        except Exception as e:
+            logger.error(f"Ошибка обратного геокодирования координат {lat}, {lon}: {e}")
+        
+        return None
+    
     def _estimate_delivery(self, from_address, to_address):
         """Базовая оценка доставки (если API недоступно)"""
         # Простая оценка: базовая стоимость + расстояние

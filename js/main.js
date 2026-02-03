@@ -3,6 +3,11 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
   ? 'http://127.0.0.1:8000/api'
   : '/api';
 
+// Global settings cache
+let siteSettings = {
+  telegram_bot_link: 'https://t.me/your_bot'
+};
+
 // Инициализация сайта
 document.addEventListener('DOMContentLoaded', function() {
   console.log("Сайт цветочного магазина запущен");
@@ -123,6 +128,9 @@ async function loadSiteContent() {
 // Рендеринг настроек сайта
 function renderSettings(settings) {
   if (!settings) return;
+  
+  // Cache settings globally for use in other functions
+  siteSettings = { ...siteSettings, ...settings };
   
   // Обновляем телефон в шапке
   const headerPhone = document.querySelector('.header-phone');
@@ -321,7 +329,7 @@ function renderProducts(products, containerSelector) {
       <p class="product-desc">${product.description || ''}</p>
       <div class="product-meta">
         ${priceHtml}
-        <a href="https://t.me/your_bot" class="btn btn-small" target="_blank">Заказать</a>
+        <a href="${siteSettings.telegram_bot_link || 'https://t.me/your_bot'}" class="btn btn-small" target="_blank">Заказать</a>
       </div>
     </article>
   `}).join('');

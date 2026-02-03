@@ -18,14 +18,17 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'order', 'is_active']
+    list_display = ['name', 'slug', 'order', 'is_active']
+    list_display_links = ['name']  # Кликабельная ссылка на редактирование
     list_editable = ['order', 'is_active']
     prepopulated_fields = {'slug': ('name',)}
+    search_fields = ['name']
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ['name', 'category', 'price', 'hide_price', 'is_active', 'is_popular', 'order']
+    list_display_links = ['name']  # Кликабельная ссылка на редактирование
     list_filter = ['is_active', 'is_popular', 'hide_price', 'category']
     list_editable = ['price', 'hide_price', 'is_active', 'is_popular', 'order']
     search_fields = ['name', 'description']
@@ -55,8 +58,10 @@ class ReviewAdmin(admin.ModelAdmin):
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ['id', 'customer_name', 'phone', 'status', 'total_price', 'created_at']
+    list_display_links = ['id', 'customer_name']  # Кликабельные ссылки на редактирование
     list_filter = ['status', 'created_at', 'has_subscription']
     search_fields = ['customer_name', 'phone', 'telegram_username']
+    list_editable = ['status']  # Статус можно менять прямо в списке
     readonly_fields = ['created_at', 'updated_at']
     inlines = [OrderItemInline]
     fieldsets = (

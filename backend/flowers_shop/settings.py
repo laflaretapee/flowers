@@ -88,9 +88,9 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
-    BASE_DIR.parent.parent / 'css',
-    BASE_DIR.parent.parent / 'js',
-    BASE_DIR.parent.parent / 'assets',
+    BASE_DIR.parent / 'css',
+    BASE_DIR.parent / 'js',
+    BASE_DIR.parent / 'assets',
 ]
 
 MEDIA_URL = '/media/'
