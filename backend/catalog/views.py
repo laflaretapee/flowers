@@ -1,7 +1,6 @@
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, mixins
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
 from .models import (
     Category, Product, Review,
     SiteSettings, HeroSection, PromoBanner, DeliveryInfo
@@ -10,9 +9,6 @@ from .serializers import (
     CategorySerializer, ProductSerializer, ReviewSerializer,
     SiteSettingsSerializer, HeroSectionSerializer, PromoBannerSerializer, DeliveryInfoSerializer
 )
-from django.db.models import Avg
-
-
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.filter(is_active=True)
     serializer_class = CategorySerializer
@@ -46,8 +42,8 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data)
 
 
-class ReviewViewSet(viewsets.ModelViewSet):
-    queryset = Review.objects.filter(is_published=True)
+class ReviewViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = Review.objects.all()
     serializer_class = ReviewSerializer
     
     def get_queryset(self):
@@ -55,7 +51,12 @@ class ReviewViewSet(viewsets.ModelViewSet):
         product_id = self.request.query_params.get('product', None)
         if product_id:
             queryset = queryset.filter(product_id=product_id)
+        if self.action in {'list', 'retrieve'}:
+            queryset = queryset.filter(is_published=True)
         return queryset.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(is_published=True)
 
 
 @api_view(['GET'])
@@ -66,7 +67,10 @@ def site_content(request):
     promo = PromoBanner.get_promo()
     delivery = DeliveryInfo.get_delivery_info()
     categories = Category.objects.filter(is_active=True)
-    products = Product.objects.filter(is_active=True, is_popular=True)[:6]
+    products = Product.objects.filter(is_active=True, is_popular=True).order_by('order', 'name')[:6]
+    # Если популярные не отмечены, чтобы блок на главной не был пустым — покажем первые 3 активных.
+    if not products.exists():
+        products = Product.objects.filter(is_active=True).order_by('order', 'name')[:3]
     reviews = Review.objects.filter(is_published=True)[:6]
     
     context = {'request': request}

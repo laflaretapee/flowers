@@ -38,10 +38,23 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class ReviewSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Review
-        fields = ['id', 'name', 'text', 'rating', 'product', 'created_at']
+        fields = ['id', 'name', 'text', 'rating', 'product', 'product_name', 'avatar_url', 'created_at']
         read_only_fields = ['created_at']
+
+    def get_avatar_url(self, obj):
+        if not getattr(obj, 'avatar', None):
+            return None
+        try:
+            url = obj.avatar.url
+        except Exception:
+            return None
+        request = self.context.get('request')
+        return request.build_absolute_uri(url) if request else url
 
 
 class SiteSettingsSerializer(serializers.ModelSerializer):

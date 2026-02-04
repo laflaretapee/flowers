@@ -1,5 +1,17 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+import re
+
+
+def normalize_phone(value: str) -> str:
+    if not value:
+        return ''
+    digits = re.sub(r'\D+', '', value)
+    # Приводим к формату 7XXXXXXXXXX для РФ, если возможно
+    if len(digits) == 11 and digits.startswith('8'):
+        digits = '7' + digits[1:]
+    return digits
 
 
 class SiteSettings(models.Model):
@@ -7,7 +19,7 @@ class SiteSettings(models.Model):
     site_name = models.CharField('Название сайта', max_length=200, default='Цветочная Лавка')
     phone = models.CharField('Телефон', max_length=50, default='+7 (999) 123-45-67')
     address = models.TextField('Адрес', blank=True)
-    telegram_bot_link = models.URLField('Ссылка на Telegram бота', blank=True)
+    telegram_bot_link = models.URLField('Ссылка на Telegram бота', blank=True, default='https://t.me/testikbotick_bot')
     instagram_link = models.URLField('Instagram', blank=True)
     vk_link = models.URLField('VKontakte', blank=True)
     telegram_channel_link = models.URLField('Telegram канал', blank=True)
@@ -187,6 +199,8 @@ class Review(models.Model):
     ]
     
     name = models.CharField('Имя', max_length=100)
+    telegram_user_id = models.BigIntegerField('Telegram ID пользователя', blank=True, null=True)
+    avatar = models.ImageField('Аватар', upload_to='reviews/avatars/', blank=True, null=True)
     text = models.TextField('Текст отзыва')
     rating = models.IntegerField('Оценка', choices=RATING_CHOICES, default=5)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name='reviews', verbose_name='Товар')
@@ -218,12 +232,14 @@ class Order(models.Model):
     telegram_username = models.CharField('Telegram username', max_length=100, blank=True)
     customer_name = models.CharField('Имя клиента', max_length=200)
     phone = models.CharField('Телефон', max_length=20)
+    phone_normalized = models.CharField('Телефон (нормализованный)', max_length=20, blank=True, db_index=True)
     address = models.TextField('Адрес доставки')
     comment = models.TextField('Комментарий', blank=True)
     status = models.CharField('Статус', max_length=20, choices=STATUS_CHOICES, default='new')
     total_price = models.DecimalField('Итоговая цена', max_digits=10, decimal_places=2)
     discount_percent = models.IntegerField('Скидка %', default=0)
     has_subscription = models.BooleanField('Есть подписка', default=False)
+    ready_photo = models.ImageField('Фото готового букета', upload_to='orders/ready/', blank=True, null=True)
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Обновлен', auto_now=True)
     
@@ -234,6 +250,36 @@ class Order(models.Model):
     
     def __str__(self):
         return f"Заказ #{self.id} от {self.customer_name}"
+
+    def clean(self):
+        super().clean()
+        if self.status == 'ready' and not self.ready_photo:
+            raise ValidationError({'ready_photo': 'Для статуса «Готов» загрузите фото готового букета.'})
+
+
+class BotAdmin(models.Model):
+    """Администратор бота (управляется из Django admin)."""
+
+    username = models.CharField('Telegram username', max_length=100, blank=True, help_text='Без @')
+    telegram_user_id = models.BigIntegerField('Telegram ID', blank=True, null=True)
+    is_active = models.BooleanField('Активен', default=True)
+    note = models.CharField('Комментарий', max_length=200, blank=True)
+    created_at = models.DateTimeField('Создан', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Админ бота'
+        verbose_name_plural = 'Админы бота'
+        indexes = [
+            models.Index(fields=['is_active', 'telegram_user_id']),
+            models.Index(fields=['is_active', 'username']),
+        ]
+
+    def __str__(self):
+        if self.username:
+            return self.username
+        if self.telegram_user_id:
+            return str(self.telegram_user_id)
+        return f"Админ #{self.pk}"
 
 
 class OrderItem(models.Model):

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    Category, Product, ProductImage, Review, Order, OrderItem,
+    Category, Product, ProductImage, Review, Order, OrderItem, BotAdmin,
     SiteSettings, HeroSection, PromoBanner, DeliveryInfo
 )
 
@@ -69,12 +69,20 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('telegram_user_id', 'telegram_username', 'customer_name', 'phone', 'address', 'comment')
         }),
         ('Заказ', {
-            'fields': ('status', 'total_price', 'discount_percent', 'has_subscription')
+            'fields': ('status', 'total_price', 'discount_percent', 'has_subscription', 'ready_photo')
         }),
         ('Даты', {
             'fields': ('created_at', 'updated_at')
         }),
     )
+
+
+@admin.register(BotAdmin)
+class BotAdminAdmin(admin.ModelAdmin):
+    list_display = ['username', 'telegram_user_id', 'is_active', 'note', 'created_at']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['username', 'telegram_user_id', 'note']
+    list_editable = ['is_active']
 
 
 admin.site.register(ProductImage)
