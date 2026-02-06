@@ -61,13 +61,17 @@ git push -u origin main
 
 ### 5. Создать суперпользователя
 
-После успешного деплоя:
-1. Открыть Web Service → вкладка **Shell**
-2. Выполнить:
-```bash
-cd backend
-python manage.py createsuperuser
-```
+Суперпользователь создаётся **автоматически** при деплое, если заданы переменные окружения:
+
+| Ключ | Значение |
+|------|----------|
+| `DJANGO_SUPERUSER_USERNAME` | `admin` |
+| `DJANGO_SUPERUSER_EMAIL` | `your@email.com` |
+| `DJANGO_SUPERUSER_PASSWORD` | *надёжный пароль* |
+
+Добавьте их в Environment Variables сервиса и сделайте **Manual Deploy**.
+
+> Shell недоступен на Free плане Render, поэтому используется автоматическое создание через `build.sh`.
 
 ### 6. Готово!
 
