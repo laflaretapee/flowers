@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/', include('catalog.urls')),
     # Frontend pages
     path('', serve_frontend, {'page': 'index.html'}, name='home'),
+    path('index.html', serve_frontend, {'page': 'index.html'}, name='home-alt'),
     path('catalog.html', serve_frontend, {'page': 'catalog.html'}, name='catalog'),
     path('privacy-policy.html', serve_frontend, {'page': 'privacy-policy.html'}, name='privacy-policy'),
 ]
