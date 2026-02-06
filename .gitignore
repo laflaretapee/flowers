@@ -11,3 +11,7 @@ To
 backend/media/exports/
 backend/media/orders/
 backend/media/reviews/avatars/
+
+# Production build artifacts
+backend/staticfiles/
+backend/db.sqlite3
