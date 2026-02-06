@@ -26,6 +26,7 @@ def serve_frontend(request, page='index.html'):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('catalog.urls')),
+    path('bot/webhook/', include('telegram_bot.urls')),
     # Frontend pages
     path('', serve_frontend, {'page': 'index.html'}, name='home'),
     path('index.html', serve_frontend, {'page': 'index.html'}, name='home-alt'),

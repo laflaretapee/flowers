@@ -1922,13 +1922,13 @@ class FlowerShopBot:
         self.bot = None
         self.dp = None
     
-    def run(self):
-        """Запуск бота"""
+    def _setup(self):
+        """Общая инициализация бота и диспетчера"""
         global bot_instance, channel_id, group_id
         
         if not self.token:
             logger.error("TELEGRAM_BOT_TOKEN не установлен!")
-            return
+            return False
         
         # Устанавливаем глобальные переменные
         channel_id = getattr(settings, 'TELEGRAM_CHANNEL_ID', None)
@@ -1951,7 +1951,39 @@ class FlowerShopBot:
         # Регистрируем роутер
         self.dp.include_router(router)
         
-        logger.info("🌸 Бот Цветочная Лавка запущен (aiogram 3.x)")
+        return True
+    
+    def run(self):
+        """Запуск бота в режиме polling (для локальной разработки)"""
+        if not self._setup():
+            return
         
-        # Запускаем polling
+        logger.info("🌸 Бот Цветочная Лавка запущен в режиме polling (aiogram 3.x)")
         asyncio.run(self.dp.start_polling(self.bot))
+
+    async def setup_webhook(self, webhook_url: str):
+        """Настройка webhook для production"""
+        if not self._setup():
+            return
+        
+        await self.bot.set_webhook(webhook_url)
+        logger.info("🌸 Бот Цветочная Лавка: webhook установлен → %s", webhook_url)
+
+    async def process_update(self, update_data: dict):
+        """Обработка входящего обновления от Telegram"""
+        from aiogram.types import Update
+        update = Update.model_validate(update_data, context={"bot": self.bot})
+        await self.dp.feed_update(self.bot, update)
+
+
+# Singleton для webhook-режима
+_webhook_bot: FlowerShopBot | None = None
+
+
+def get_webhook_bot() -> FlowerShopBot:
+    """Получить или создать экземпляр бота для webhook-режима"""
+    global _webhook_bot
+    if _webhook_bot is None:
+        _webhook_bot = FlowerShopBot()
+        _webhook_bot._setup()
+    return _webhook_bot
