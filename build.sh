@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build script for Render.com deployment
+# Build script for PaaS deployment
 set -o errexit
 
 # Install dependencies

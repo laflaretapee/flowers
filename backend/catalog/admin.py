@@ -1,4 +1,9 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.conf import settings
+from django.urls import path, reverse
+from django.shortcuts import redirect, get_object_or_404
+from django.utils.html import format_html
+from telegram_bot.sender import send_message
 from .models import (
     Category, Product, ProductImage, Review, Order, OrderItem, BotAdmin,
     SiteSettings, HeroSection, PromoBanner, DeliveryInfo
@@ -57,24 +62,93 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ['id', 'customer_name', 'phone', 'status', 'total_price', 'created_at']
+    list_display = ['id', 'customer_name', 'phone', 'status', 'payment_status', 'total_price', 'created_at']
     list_display_links = ['id', 'customer_name']  # Кликабельные ссылки на редактирование
-    list_filter = ['status', 'created_at', 'has_subscription']
+    list_filter = ['status', 'payment_status', 'created_at', 'has_subscription']
     search_fields = ['customer_name', 'phone', 'telegram_username']
     list_editable = ['status']  # Статус можно менять прямо в списке
-    readonly_fields = ['created_at', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at', 'ready_photo_request_link']
     inlines = [OrderItemInline]
+    actions = ['request_ready_photo']
     fieldsets = (
         ('Информация о клиенте', {
             'fields': ('telegram_user_id', 'telegram_username', 'customer_name', 'phone', 'address', 'comment')
         }),
         ('Заказ', {
-            'fields': ('status', 'total_price', 'discount_percent', 'has_subscription', 'ready_photo')
+            'fields': (
+                'status',
+                'total_price',
+                'discount_percent',
+                'has_subscription',
+                'ready_photo',
+                'ready_photo_request_link',
+                'payment_status',
+                'payment_id',
+                'payment_url',
+                'paid_at'
+            )
         }),
         ('Даты', {
             'fields': ('created_at', 'updated_at')
         }),
     )
+
+    def request_ready_photo(self, request, queryset):
+        token = settings.TELEGRAM_BOT_TOKEN
+        if not token:
+            self.message_user(request, "TELEGRAM_BOT_TOKEN не задан.", level=messages.ERROR)
+            return
+
+        admins = list(BotAdmin.objects.filter(is_active=True, telegram_user_id__isnull=False))
+        if not admins:
+            self.message_user(request, "Нет активных админов бота с Telegram ID.", level=messages.ERROR)
+            return
+
+        sent = 0
+        for order in queryset:
+            text = (
+                f"📷 Запрос фото готового букета для заказа #{order.id}.\n"
+                "Нажмите кнопку ниже и отправьте фото."
+            )
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": "📷 Загрузить фото", "callback_data": f"admin_ready_{order.id}"}]
+                ]
+            }
+            for admin_item in admins:
+                if send_message(admin_item.telegram_user_id, text, reply_markup=reply_markup, timeout=10):
+                    sent += 1
+
+        if sent:
+            self.message_user(request, f"Запросы отправлены: {sent}.", level=messages.SUCCESS)
+        else:
+            self.message_user(request, "Не удалось отправить запросы в Telegram.", level=messages.ERROR)
+
+    request_ready_photo.short_description = "Запросить фото готового букета в боте"
+
+    def ready_photo_request_link(self, obj):
+        if not obj or not obj.pk:
+            return "Сначала сохраните заказ."
+        url = reverse("admin:catalog_order_request_ready_photo", args=[obj.pk])
+        return format_html('<a class="button" href="{}">Запросить фото в боте</a>', url)
+
+    ready_photo_request_link.short_description = "Фото готового букета"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                '<int:order_id>/request-ready-photo/',
+                self.admin_site.admin_view(self.request_ready_photo_view),
+                name='catalog_order_request_ready_photo'
+            ),
+        ]
+        return custom_urls + urls
+
+    def request_ready_photo_view(self, request, order_id):
+        order = get_object_or_404(Order, pk=order_id)
+        self.request_ready_photo(request, Order.objects.filter(pk=order.id))
+        return redirect(f'../../{order.id}/change/')
 
 
 @admin.register(BotAdmin)

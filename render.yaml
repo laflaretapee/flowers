@@ -30,3 +30,11 @@ services:
         sync: false
       - key: TELEGRAM_CHANNEL_ID
         sync: false
+      - key: SITE_URL
+        value: "https://flowers-shop.onrender.com"
+      - key: YOOKASSA_SHOP_ID
+        sync: false
+      - key: YOOKASSA_SECRET_KEY
+        sync: false
+      - key: YOOKASSA_RETURN_URL
+        value: "https://flowers-shop.onrender.com"

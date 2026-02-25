@@ -27,10 +27,14 @@ cp .env.example .env
 - `SECRET_KEY` - сгенерируйте случайную строку
 - `TELEGRAM_BOT_TOKEN` - токен бота от @BotFather
 - `TELEGRAM_GROUP_ID` - ID группы для проверки подписки
+- `SITE_URL` - базовый URL сайта (для SEO и оплаты)
+- `DATABASE_URL` - строка подключения PostgreSQL
+- `WEBHOOK_HOST` - публичный HTTPS URL вашего домена (например `https://flowers.example.ru`)
 
 **Опциональные (для полного функционала):**
 - `GOOGLE_MAPS_API_KEY` - для синхронизации отзывов из Google Maps
 - `YANDEX_TAXI_API_KEY` - для интеграции доставки через Yandex Taxi
+- `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` - для онлайн-оплаты
 
 ### 3. Настройка базы данных
 
@@ -48,10 +52,11 @@ cd backend
 python manage.py runserver
 ```
 
-**Telegram бот (в отдельном терминале):**
+**Telegram webhook:**
 ```bash
 cd backend
-python manage.py run_bot
+python manage.py telegram_webhook set
+python manage.py telegram_webhook info
 ```
 
 ## Настройка Telegram бота
@@ -82,6 +87,32 @@ python manage.py run_bot
 3. Создайте категории товаров
 4. Добавьте товары с изображениями
 5. Настройте популярные товары (чекбокс "Популярный")
+
+## Запрос фото готового букета через админку
+
+1. Откройте нужный заказ в админке.
+2. В блоке "Заказ" нажмите кнопку **"Запросить фото в боте"**.
+3. Администратор(ы) бота получат сообщение с кнопкой и смогут отправить фото в Telegram.
+
+> Для работы функции в разделе "Админы бота" должны быть заполнены `telegram_user_id`.
+
+## Онлайн-оплата YooKassa
+
+1. Зарегистрируйте магазин в YooKassa и получите:
+   - `YOOKASSA_SHOP_ID`
+   - `YOOKASSA_SECRET_KEY`
+2. Заполните их в `.env` (или переменных окружения).
+3. Укажите `YOOKASSA_RETURN_URL` (обычно это ваш `SITE_URL`).
+4. В Telegram-боте после оформления заказа появится кнопка оплаты.
+5. После оплаты нажмите кнопку **"Проверить оплату"** в боте.
+
+### Webhook (по желанию)
+
+Можно подключить webhook, чтобы оплата отмечалась автоматически:
+
+- URL: `https://ваш-домен/api/payments/yookassa/`
+
+После успешного платежа статус оплаты в заказе обновится автоматически.
 
 ## Добавление товаров
 
@@ -174,13 +205,15 @@ python manage.py sync_maps_reviews
 
 ### Настройка вебхуков для бота
 
-Вместо `run_bot` используйте вебхуки:
+`run_bot` (polling) отключен. Для работы бота в production:
 
-```python
-# В telegram_bot/bot.py добавьте метод:
-async def set_webhook(self, url):
-    await self.application.bot.set_webhook(url=f"{url}/telegram/webhook/")
+```bash
+cd backend
+python manage.py telegram_webhook set
+python manage.py telegram_webhook info
 ```
+
+Путь webhook в проекте: `/bot/webhook/`.
 
 ## Поддержка
 

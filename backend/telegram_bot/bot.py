@@ -1,7 +1,6 @@
 """
 Telegram бот для цветочного магазина (aiogram 3.x)
 """
-import asyncio
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 import os
@@ -35,6 +34,11 @@ from asgiref.sync import sync_to_async
 
 from catalog.models import Product, Category, HeroSection, BotAdmin, Order, OrderItem, Review, normalize_phone
 from catalog.taxi_integration import TaxiDeliveryIntegration
+from catalog.payments import (
+    update_order_from_payment,
+    fetch_payment,
+    notify_payment_status,
+)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -316,6 +320,7 @@ def get_address_confirm_keyboard() -> ReplyKeyboardMarkup:
 
 # Router
 router = Router()
+_router_initialized = False
 
 
 # Handlers
@@ -1671,6 +1676,8 @@ async def create_order(message: Message, state: FSMContext):
         
         await state.clear()
         await message.answer(response_text, reply_markup=get_main_keyboard(), parse_mode=ParseMode.HTML)
+
+        # Оплата будет запрошена после статуса "Готов"
         
     except Exception as e:
         logger.error(f"Ошибка создания заказа: {e}")
@@ -1680,6 +1687,52 @@ async def create_order(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard()
         )
 
+
+@router.callback_query(F.data.startswith("check_payment_"))
+async def check_payment_status(callback: CallbackQuery):
+    """Проверка статуса оплаты по кнопке"""
+    await callback.answer()
+    try:
+        order_id = int(callback.data.split("_")[2])
+    except Exception:
+        await callback.message.answer("Не удалось определить заказ.")
+        return
+
+    @sync_to_async
+    def _get_order():
+        return Order.objects.filter(pk=order_id, telegram_user_id=callback.from_user.id).first()
+
+    order = await _get_order()
+    if not order:
+        await callback.message.answer("Заказ не найден.")
+        return
+
+    if not order.payment_id:
+        if order.payment_url:
+            await callback.message.answer(
+                "Для этого заказа используется временная ссылка оплаты. "
+                "Подтверждение оплаты делается вручную менеджером."
+            )
+        else:
+            await callback.message.answer("Оплата по этому заказу не создавалась.")
+        return
+
+    payment = await sync_to_async(fetch_payment)(order.payment_id)
+    if not payment:
+        await callback.message.answer("Не удалось проверить оплату. Попробуйте позже.")
+        return
+
+    new_status, _ = await sync_to_async(update_order_from_payment)(order, payment)
+
+    status_labels = {
+        'not_paid': 'Не оплачено',
+        'pending': 'Ожидает оплаты',
+        'succeeded': 'Оплачено',
+        'canceled': 'Отменено',
+    }
+    await callback.message.answer(
+        f"Статус оплаты заказа #{order.id}: {status_labels.get(new_status, new_status)}."
+    )
 
 @router.message(F.text == "🎁 Акции")
 async def show_promotions(message: Message):
@@ -1924,7 +1977,7 @@ class FlowerShopBot:
     
     def _setup(self):
         """Общая инициализация бота и диспетчера"""
-        global bot_instance, channel_id, group_id
+        global bot_instance, channel_id, group_id, _router_initialized
         
         if not self.token:
             logger.error("TELEGRAM_BOT_TOKEN не установлен!")
@@ -1943,23 +1996,17 @@ class FlowerShopBot:
         
         # Создаем диспетчер
         self.dp = Dispatcher(storage=MemoryStorage())
-        
-        # Регистрируем middleware для проверки подписки
-        router.message.middleware(SubscriptionMiddleware())
-        router.callback_query.middleware(SubscriptionMiddleware())
-        
-        # Регистрируем роутер
+
+        # Middleware должен регистрироваться на router только один раз за процесс.
+        if not _router_initialized:
+            router.message.middleware(SubscriptionMiddleware())
+            router.callback_query.middleware(SubscriptionMiddleware())
+            _router_initialized = True
+
+        # Регистрируем роутер в Dispatcher
         self.dp.include_router(router)
         
         return True
-    
-    def run(self):
-        """Запуск бота в режиме polling (для локальной разработки)"""
-        if not self._setup():
-            return
-        
-        logger.info("🌸 Бот Цветочная Лавка запущен в режиме polling (aiogram 3.x)")
-        asyncio.run(self.dp.start_polling(self.bot))
 
     async def setup_webhook(self, webhook_url: str):
         """Настройка webhook для production"""

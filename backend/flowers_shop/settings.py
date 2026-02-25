@@ -49,6 +49,10 @@ CSRF_TRUSTED_ORIGINS = [
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
 
+# Respect reverse-proxy headers (ngrok / Render) for correct absolute HTTPS URLs.
+USE_X_FORWARDED_HOST = env_bool('USE_X_FORWARDED_HOST', True)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -97,7 +101,8 @@ WSGI_APPLICATION = 'flowers_shop.wsgi.application'
 DATABASES = {
     'default': dj_database_url.config(
         default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
-        conn_max_age=600,
+        conn_max_age=env_int('DB_CONN_MAX_AGE', 600),
+        ssl_require=env_bool('DB_SSL_REQUIRE', False),
     )
 }
 
@@ -173,6 +178,31 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_GROUP_ID = os.getenv('TELEGRAM_GROUP_ID', '')
 TELEGRAM_CHANNEL_ID = os.getenv('TELEGRAM_CHANNEL_ID', '')
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '').rstrip('/')
+if not WEBHOOK_HOST and RENDER_EXTERNAL_HOSTNAME:
+    WEBHOOK_HOST = f'https://{RENDER_EXTERNAL_HOSTNAME}'
+
+TELEGRAM_WEBHOOK_PATH = os.getenv('TELEGRAM_WEBHOOK_PATH', '/bot/webhook/').strip() or '/bot/webhook/'
+if not TELEGRAM_WEBHOOK_PATH.startswith('/'):
+    TELEGRAM_WEBHOOK_PATH = f'/{TELEGRAM_WEBHOOK_PATH}'
+if not TELEGRAM_WEBHOOK_PATH.endswith('/'):
+    TELEGRAM_WEBHOOK_PATH = f'{TELEGRAM_WEBHOOK_PATH}/'
+
+TELEGRAM_WEBHOOK_SECRET = os.getenv('TELEGRAM_WEBHOOK_SECRET', '').strip()
+TELEGRAM_WEBHOOK_AUTOCONFIGURE = env_bool('TELEGRAM_WEBHOOK_AUTOCONFIGURE', False)
+TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES = env_bool('TELEGRAM_WEBHOOK_DROP_PENDING_UPDATES', False)
+
+# Base site URL (for SEO and payment return links)
+SITE_URL = os.getenv('SITE_URL', '').rstrip('/')
+
+# YooKassa
+YOOKASSA_SHOP_ID = os.getenv('YOOKASSA_SHOP_ID', '')
+YOOKASSA_SECRET_KEY = os.getenv('YOOKASSA_SECRET_KEY', '')
+YOOKASSA_RETURN_URL = os.getenv('YOOKASSA_RETURN_URL', SITE_URL)
+
+# Temporary / manual payment fallback (used when YooKassa is not configured).
+# Supports placeholders: {order_id}, {amount}, {telegram_user_id}.
+MANUAL_PAYMENT_URL_TEMPLATE = os.getenv('MANUAL_PAYMENT_URL_TEMPLATE', '')
 
 # Promo settings
 PROMO_DISCOUNT_PERCENT = env_int('PROMO_DISCOUNT_PERCENT', 10)

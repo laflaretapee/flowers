@@ -1,116 +1,122 @@
-# Деплой на Render.com
+# Деплой на Timeweb Cloud (VPS)
 
-## Что нужно сделать (пошагово)
+## Архитектура
 
-### 1. Залить проект на GitHub
+- `web` контейнер: Django + Telegram bot в webhook-режиме (без polling).
+- `db` контейнер: PostgreSQL 15.
+- Nginx на VPS: reverse proxy + HTTPS.
+
+Webhook Telegram в проекте: `https://<ваш-домен>/bot/webhook/`.
+
+## 1. Подготовка VPS
 
 ```bash
-cd /home/dinar/sites/flowers
-git init   # если ещё не инициализирован
-git add .
-git commit -m "Prepare for Render deployment"
-git remote add origin https://github.com/ВАШ_ЮЗЕРНЕЙМ/flowers.git
-git push -u origin main
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin nginx certbot python3-certbot-nginx git
+sudo systemctl enable --now docker
 ```
 
-> Если репозиторий приватный — это ОК, Render умеет с ними работать.
+## 2. Клонирование проекта
 
-### 2. Зарегистрироваться на Render.com
-
-1. Перейти на https://render.com
-2. Нажать **Get Started for Free**
-3. Войти через **GitHub** (самый удобный вариант)
-
-### 3. Создать базу данных PostgreSQL
-
-1. В Dashboard → **New** → **PostgreSQL**
-2. Заполнить:
-   - **Name**: `flowers-db`
-   - **Region**: `Frankfurt (EU Central)` (ближайший к РФ)
-   - **Plan**: **Free**
-3. Нажать **Create Database**
-4. Скопировать **Internal Database URL** (понадобится на следующем шаге)
-
-### 4. Создать Web Service
-
-1. В Dashboard → **New** → **Web Service**
-2. Подключить GitHub репозиторий `flowers`
-3. Заполнить настройки:
-   - **Name**: `flowers-shop` (или любое другое)
-   - **Region**: `Frankfurt (EU Central)`
-   - **Branch**: `main`
-   - **Runtime**: `Python`
-   - **Build Command**: `./build.sh`
-   - **Start Command**: `cd backend && gunicorn flowers_shop.wsgi:application --bind 0.0.0.0:$PORT`
-   - **Plan**: **Free**
-
-4. Добавить **Environment Variables** (кнопка Advanced → Add Environment Variable):
-
-| Ключ | Значение |
-|------|----------|
-| `DATABASE_URL` | *Internal Database URL из шага 3* |
-| `SECRET_KEY` | *любая длинная случайная строка (можно сгенерировать)* |
-| `DEBUG` | `False` |
-| `ALLOWED_HOSTS` | `.onrender.com` |
-| `PYTHON_VERSION` | `3.11.6` |
-| `TELEGRAM_BOT_TOKEN` | *ваш токен бота* |
-| `TELEGRAM_GROUP_ID` | *ID вашей группы* |
-| `TELEGRAM_CHANNEL_ID` | *ID вашего канала* |
-
-5. Нажать **Create Web Service**
-
-### 5. Создать суперпользователя
-
-Суперпользователь создаётся **автоматически** при деплое, если заданы переменные окружения:
-
-| Ключ | Значение |
-|------|----------|
-| `DJANGO_SUPERUSER_USERNAME` | `admin` |
-| `DJANGO_SUPERUSER_EMAIL` | `your@email.com` |
-| `DJANGO_SUPERUSER_PASSWORD` | *надёжный пароль* |
-
-Добавьте их в Environment Variables сервиса и сделайте **Manual Deploy**.
-
-> Shell недоступен на Free плане Render, поэтому используется автоматическое создание через `build.sh`.
-
-### 6. Готово!
-
-Ваш сайт будет доступен по адресу:
-```
-https://flowers-shop.onrender.com
+```bash
+cd /opt
+sudo git clone <YOUR_REPO_URL> flowers
+sudo chown -R $USER:$USER /opt/flowers
+cd /opt/flowers
 ```
 
-- Главная: `https://flowers-shop.onrender.com/`
-- Каталог: `https://flowers-shop.onrender.com/catalog.html`
-- Админка: `https://flowers-shop.onrender.com/admin/`
-- API: `https://flowers-shop.onrender.com/api/`
+## 3. Настройка `.env`
 
----
+```bash
+cp .env.example .env
+```
 
-## Альтернатива: деплой через render.yaml (Blueprint)
+Минимум для production:
 
-Вместо ручной настройки можно использовать автоматический деплой:
+- `DEBUG=False`
+- `SECRET_KEY=<случайная длинная строка>`
+- `ALLOWED_HOSTS=<домен>,www.<домен>,localhost,127.0.0.1`
+- `CSRF_TRUSTED_ORIGINS=https://<домен>,https://www.<домен>`
+- `SITE_URL=https://<домен>`
+- `DATABASE_URL=postgres://flowers_user:flowers_password@db:5432/flowers_db`
+- `TELEGRAM_BOT_TOKEN=<token>`
+- `TELEGRAM_GROUP_ID=<id>`
+- `WEBHOOK_HOST=https://<домен>`
 
-1. В Dashboard → **New** → **Blueprint**
-2. Подключить репозиторий
-3. Render автоматически прочитает `render.yaml` и создаст БД + сервис
-4. Останется только добавить переменные `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_ID`, `TELEGRAM_CHANNEL_ID`
+Опционально:
 
----
+- `TELEGRAM_WEBHOOK_SECRET=<случайная строка>`
+- `YOOKASSA_SHOP_ID` / `YOOKASSA_SECRET_KEY` / `YOOKASSA_RETURN_URL`
 
-## Важные заметки
+## 4. Запуск контейнеров
 
-- **Free план засыпает через 15 минут** без трафика. Первый запрос после сна ~30 секунд.
-- **Бесплатная БД PostgreSQL** действует 90 дней, потом нужно пересоздать.
-- **Media файлы** (загруженные картинки) на Free плане не сохраняются между деплоями. Для постоянного хранения нужен внешний сервис (Cloudinary, AWS S3) или Render Disk (платный).
-- **Telegram бот** в режиме polling нужно запускать отдельно. Для production лучше настроить webhook.
+```bash
+docker compose up -d --build
+docker compose ps
+```
 
-## Запуск Telegram бота на Render
+Контейнер `web` поднимает миграции, статику, регистрирует Telegram webhook и запускает Gunicorn.
 
-Создать отдельный **Background Worker**:
-1. **New** → **Background Worker**
-2. Тот же репозиторий
-3. **Build Command**: `./build.sh`
-4. **Start Command**: `cd backend && python manage.py run_bot`
-5. Те же переменные окружения
-6. **Plan**: Free (Render может не давать бесплатные workers — в таком случае бота можно запускать локально)
+## 5. Nginx
+
+1. Отредактируйте домен в шаблоне [`deploy/timeweb/nginx.flowers.conf`](deploy/timeweb/nginx.flowers.conf).
+2. Подключите конфиг:
+
+```bash
+sudo cp deploy/timeweb/nginx.flowers.conf /etc/nginx/sites-available/flowers
+sudo ln -sf /etc/nginx/sites-available/flowers /etc/nginx/sites-enabled/flowers
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+## 6. HTTPS (Let's Encrypt)
+
+```bash
+sudo certbot --nginx -d <домен> -d www.<домен>
+```
+
+Проверьте автообновление сертификата:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+## 7. Проверка Telegram webhook
+
+```bash
+docker compose exec web python manage.py telegram_webhook info
+docker compose exec web python manage.py telegram_webhook set --drop-pending-updates
+docker compose exec web python manage.py telegram_webhook info
+```
+
+## 8. Проверка приложения
+
+- Главная: `https://<домен>/`
+- Админка: `https://<домен>/admin/`
+- API: `https://<домен>/api/`
+- Telegram webhook endpoint: `https://<домен>/bot/webhook/` (должен отвечать только Telegram с секретом)
+
+## 9. YooKassa (когда будут доступы)
+
+Проект уже готов к webhook-обновлению оплаты:
+
+- Endpoint: `https://<домен>/api/payments/yookassa/`
+- После заполнения `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` статус оплаты обновляется автоматически.
+
+После добавления ключей:
+
+```bash
+docker compose up -d
+```
+
+И настройте webhook в кабинете YooKassa на URL выше.
+
+## 10. Полезные команды
+
+```bash
+docker compose logs -f web
+docker compose logs -f db
+docker compose exec web python manage.py migrate
+docker compose exec web python manage.py createsuperuser
+docker compose restart web
+```

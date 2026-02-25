@@ -227,6 +227,12 @@ class Order(models.Model):
         ('completed', 'Завершен'),
         ('cancelled', 'Отменен'),
     ]
+    PAYMENT_STATUS_CHOICES = [
+        ('not_paid', 'Не оплачен'),
+        ('pending', 'Ожидает оплаты'),
+        ('succeeded', 'Оплачен'),
+        ('canceled', 'Отменен'),
+    ]
     
     telegram_user_id = models.BigIntegerField('Telegram ID пользователя')
     telegram_username = models.CharField('Telegram username', max_length=100, blank=True)
@@ -240,6 +246,15 @@ class Order(models.Model):
     discount_percent = models.IntegerField('Скидка %', default=0)
     has_subscription = models.BooleanField('Есть подписка', default=False)
     ready_photo = models.ImageField('Фото готового букета', upload_to='orders/ready/', blank=True, null=True)
+    payment_status = models.CharField(
+        'Статус оплаты',
+        max_length=20,
+        choices=PAYMENT_STATUS_CHOICES,
+        default='not_paid'
+    )
+    payment_id = models.CharField('ID платежа YooKassa', max_length=100, blank=True)
+    payment_url = models.URLField('Ссылка на оплату', blank=True)
+    paid_at = models.DateTimeField('Дата оплаты', blank=True, null=True)
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Обновлен', auto_now=True)
     

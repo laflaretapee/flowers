@@ -7,6 +7,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.static import serve as static_serve
 from django.http import FileResponse
+from .seo import sitemap_xml, robots_txt
 
 # Customize admin site
 admin.site.site_header = 'Цветочная Лавка — Админ-панель'
@@ -23,14 +24,21 @@ def serve_frontend(request, page='index.html'):
     raise Http404
 
 
+telegram_webhook_path = getattr(settings, 'TELEGRAM_WEBHOOK_PATH', '/bot/webhook/').strip('/')
+if not telegram_webhook_path:
+    telegram_webhook_path = 'bot/webhook'
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('catalog.urls')),
-    path('bot/webhook/', include('telegram_bot.urls')),
+    path(f'{telegram_webhook_path}/', include('telegram_bot.urls')),
+    path('sitemap.xml', sitemap_xml, name='sitemap-xml'),
+    path('robots.txt', robots_txt, name='robots-txt'),
     # Frontend pages
     path('', serve_frontend, {'page': 'index.html'}, name='home'),
     path('index.html', serve_frontend, {'page': 'index.html'}, name='home-alt'),
     path('catalog.html', serve_frontend, {'page': 'catalog.html'}, name='catalog'),
+    path('payment-demo.html', serve_frontend, {'page': 'payment-demo.html'}, name='payment-demo'),
     path('privacy-policy.html', serve_frontend, {'page': 'privacy-policy.html'}, name='privacy-policy'),
 ]
 

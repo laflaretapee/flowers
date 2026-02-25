@@ -1,11 +1,18 @@
 import logging
 
-import requests
 from django.conf import settings
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 
+from telegram_bot.sender import send_message, send_photo
 from .models import Order, normalize_phone
+from .payments import (
+    yookassa_enabled,
+    create_payment_for_order,
+    update_order_from_payment,
+    get_return_url,
+    get_manual_payment_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,41 +60,68 @@ def order_post_save(sender, instance: Order, created: bool, **kwargs):
         f"{old_label} -> {new_label}"
     )
 
-    try:
-        if instance.status == 'ready' and getattr(instance, 'ready_photo', None):
-            try:
-                photo_path = instance.ready_photo.path
-            except Exception:
-                photo_path = None
+    delivered = False
+    if instance.status == 'ready' and getattr(instance, 'ready_photo', None):
+        try:
+            photo_path = instance.ready_photo.path
+        except Exception:
+            photo_path = None
 
-            if photo_path:
-                with open(photo_path, 'rb') as handle:
-                    response = requests.post(
-                        f"https://api.telegram.org/bot{token}/sendPhoto",
-                        data={
-                            "chat_id": instance.telegram_user_id,
-                            "caption": text
-                        },
-                        files={"photo": handle},
-                        timeout=10
-                    )
-            else:
-                response = requests.post(
-                    f"https://api.telegram.org/bot{token}/sendMessage",
-                    json={"chat_id": instance.telegram_user_id, "text": text},
-                    timeout=5
+        if photo_path:
+            delivered = send_photo(instance.telegram_user_id, photo_path, caption=text, timeout=10)
+
+    if not delivered:
+        delivered = send_message(instance.telegram_user_id, text, timeout=5)
+
+    if not delivered:
+        logger.warning("Не удалось отправить уведомление о статусе заказа %s", instance.id)
+
+    # После статуса "Готов" — запрос оплаты (YooKassa или временная ссылка)
+    if instance.status == 'ready':
+        if not instance.total_price or instance.total_price <= 0:
+            return
+        if instance.payment_status != 'succeeded':
+            payment_url = getattr(instance, 'payment_url', '')
+            has_yookassa = yookassa_enabled()
+
+            if not payment_url and has_yookassa:
+                payment = create_payment_for_order(
+                    order=instance,
+                    amount=instance.total_price,
+                    description=f"Оплата заказа #{instance.id}",
+                    return_url=get_return_url()
                 )
-        else:
-            response = requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": instance.telegram_user_id, "text": text},
-                timeout=5
-            )
-        if response.status_code >= 400:
-            logger.warning(
-                "Не удалось отправить уведомление о статусе заказа %s: %s",
-                instance.id,
-                response.text
-            )
-    except Exception as exc:
-        logger.warning("Ошибка отправки уведомления о статусе заказа %s: %s", instance.id, exc)
+                if payment:
+                    _, payment_url = update_order_from_payment(instance, payment)
+
+            if not payment_url:
+                payment_url = get_manual_payment_url(instance)
+                if payment_url:
+                    instance.payment_url = payment_url
+                    if instance.payment_status == 'not_paid':
+                        instance.payment_status = 'pending'
+                    instance.save(update_fields=['payment_url', 'payment_status', 'updated_at'])
+
+            if payment_url:
+                if has_yookassa:
+                    pay_text = (
+                        f"💳 Ваш букет готов! Пожалуйста, оплатите заказ #{instance.id}.\n"
+                        "Нажмите кнопку ниже для оплаты через YooKassa."
+                    )
+                else:
+                    pay_text = (
+                        f"💳 Ваш букет готов! Пожалуйста, оплатите заказ #{instance.id}.\n"
+                        "Нажмите кнопку ниже для перехода к временной оплате."
+                    )
+
+                inline_keyboard = [[{"text": "💳 Оплатить онлайн", "url": payment_url}]]
+                if has_yookassa and instance.payment_id:
+                    inline_keyboard.append(
+                        [{"text": "✅ Проверить оплату", "callback_data": f"check_payment_{instance.id}"}]
+                    )
+
+                reply_markup = {
+                    "inline_keyboard": inline_keyboard
+                }
+                if not send_message(instance.telegram_user_id, pay_text, reply_markup=reply_markup, timeout=10):
+                    logger.warning("Не удалось отправить ссылку на оплату заказа %s", instance.id)

@@ -2,6 +2,8 @@
 
 Комплексное решение для цветочного магазина: лендинг, Django бэкенд с админкой, Telegram-бот.
 
+Деплой на Timeweb Cloud: см. `DEPLOY.md`.
+
 ## Структура проекта
 
 ```
@@ -38,9 +40,17 @@ cp .env.example .env
 - `TELEGRAM_BOT_TOKEN` - токен вашего Telegram бота (получить у @BotFather)
 - `TELEGRAM_GROUP_ID` - ID группы для проверки подписки
 - `SECRET_KEY` - секретный ключ Django
+- `SITE_URL` - базовый URL сайта (нужен для SEO и возврата из платежей)
+- `DATABASE_URL` - строка подключения PostgreSQL
+- `WEBHOOK_HOST` - публичный HTTPS-домен для Telegram webhook (например `https://flowers.example.ru`)
 
 Для работы геолокации (опционально):
 - `YANDEX_GEOCODER_API_KEY` - API ключ Yandex Geocoder (бесплатно до 1000 запросов/день)
+
+Для онлайн-оплаты (опционально):
+- `YOOKASSA_SHOP_ID` - идентификатор магазина YooKassa
+- `YOOKASSA_SECRET_KEY` - секретный ключ YooKassa
+- `YOOKASSA_RETURN_URL` - URL для возврата после оплаты (можно совпадать с `SITE_URL`)
 
 ### 3. Настройка базы данных
 
@@ -49,6 +59,8 @@ cd backend
 python manage.py migrate
 python manage.py createsuperuser
 ```
+
+По умолчанию проект рассчитан на PostgreSQL через `DATABASE_URL`.
 
 ### 4. Запуск Django сервера
 
@@ -59,14 +71,26 @@ python manage.py runserver
 
 Админка будет доступна по адресу: http://localhost:8000/admin/
 
-### 5. Запуск Telegram бота
-
-В отдельном терминале:
+### 5. Настройка Telegram webhook
 
 ```bash
 cd backend
-python manage.py run_bot
+python manage.py telegram_webhook set
+python manage.py telegram_webhook info
 ```
+
+`run_bot` (polling) отключен.
+
+## Docker (быстрый запуск)
+
+```bash
+docker compose up -d --build
+```
+
+После запуска:
+- сайт: http://127.0.0.1:8000/
+- админка: http://localhost:8000/admin/
+- webhook для Telegram настраивается автоматически командой в `docker-compose.yml`
 
 ## Функционал
 
@@ -80,6 +104,7 @@ python manage.py run_bot
 - Управление категориями и товарами
 - Загрузка изображений
 - Управление заказами
+- Запрос фото готового букета через Telegram-бота прямо из админки
 - Модерация отзывов
 - Настройка цен и популярных товаров
 
@@ -91,6 +116,7 @@ python manage.py run_bot
 
 ### Telegram бот
 - **aiogram 3.x** - современный фреймворк для Telegram ботов
+- Работа в production только через webhook (без polling)
 - Каталог товаров с категориями и пагинацией
 - Проверка подписки на группу/канал перед использованием
 - Скидка 10% только на ПЕРВЫЙ заказ для подписчиков
@@ -101,6 +127,7 @@ python manage.py run_bot
   - Комментарий
 - Прием отзывов
 - FSM (Finite State Machine) для управления состоянием заказа
+- Онлайн-оплата YooKassa с кнопкой проверки статуса
 
 ## Особенности
 
@@ -156,6 +183,7 @@ python manage.py run_bot
 
 ### ✅ Реализовано:
 - Полный переход на **aiogram 3.x** с использованием современного синтаксиса
+- Перевод Telegram-бота на webhook-режим без polling-процесса
 - **Мидлварь проверки подписки** - автоматическая проверка перед каждым действием
 - **FSM для заказов** - пошаговое оформление с состоянием
 - **Скидка только на первый заказ** - проверка предыдущих заказов пользователя
@@ -165,12 +193,12 @@ python manage.py run_bot
 - **Кнопки request_contact/request_location** - нативные функции Telegram
 
 ### Следующие шаги:
-1. Настройка вебхуков для Telegram бота (вместо polling)
+1. Настройка домена и SSL для webhook в production
 2. Добавление реальных изображений товаров
-3. Настройка домена и деплой
+3. Автоматизация бэкапов PostgreSQL
 4. Настройка автоматической синхронизации отзывов (cron)
 5. Добавление уведомлений администратору о новых заказах
-6. Интеграция с платежными системами
+6. Настройка SEO (Sitemap/Robots, тексты под локацию)
 
 ## Контакты
 

@@ -368,6 +368,12 @@ a {
   color: var(--text-muted);
 }
 
+.catalog-local-note {
+  margin: -16px 0 28px;
+  color: var(--text-muted);
+  max-width: 720px;
+}
+
 /* cards, grid */
 
 .grid {

@@ -1,14 +1,18 @@
 from rest_framework import viewsets, filters, mixins
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 from .models import (
-    Category, Product, Review,
+    Category, Product, Review, Order,
     SiteSettings, HeroSection, PromoBanner, DeliveryInfo
 )
 from .serializers import (
     CategorySerializer, ProductSerializer, ReviewSerializer,
     SiteSettingsSerializer, HeroSectionSerializer, PromoBannerSerializer, DeliveryInfoSerializer
 )
+from .payments import yookassa_enabled, map_payment_status, notify_payment_status
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.filter(is_active=True)
     serializer_class = CategorySerializer
@@ -84,3 +88,43 @@ def site_content(request):
         'products': ProductSerializer(products, many=True, context=context).data,
         'reviews': ReviewSerializer(reviews, many=True, context=context).data,
     })
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def yookassa_webhook(request):
+    """Webhook YooKassa для обновления статуса оплаты."""
+    if not yookassa_enabled():
+        return Response({'detail': 'YooKassa disabled'}, status=503)
+
+    payload = request.data or {}
+    obj = payload.get('object') or {}
+    payment_id = obj.get('id')
+    status = obj.get('status')
+    metadata = obj.get('metadata') or {}
+    order_id = metadata.get('order_id')
+
+    if not payment_id:
+        return Response({'detail': 'Missing payment id'}, status=400)
+
+    order = None
+    if order_id:
+        order = Order.objects.filter(pk=order_id).first()
+    if order is None:
+        order = Order.objects.filter(payment_id=payment_id).first()
+    if order is None:
+        return Response({'detail': 'Order not found'}, status=200)
+
+    prev_status = order.payment_status
+    new_status = map_payment_status(status)
+    order.payment_id = payment_id
+    order.payment_status = new_status
+    if new_status == 'succeeded' and not order.paid_at:
+        order.paid_at = timezone.now()
+    order.save(update_fields=['payment_id', 'payment_status', 'paid_at', 'updated_at'])
+
+    if new_status != prev_status:
+        notify_payment_status(order, new_status)
+
+    return Response({'status': 'ok'})

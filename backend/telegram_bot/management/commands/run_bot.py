@@ -1,14 +1,14 @@
 """
 Команда для запуска Telegram бота (aiogram 3.x)
 """
-from django.core.management.base import BaseCommand
-from telegram_bot.bot import FlowerShopBot
+from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = 'Запускает Telegram бота на aiogram 3.x'
+    help = 'Polling mode is disabled. Use Telegram webhook mode.'
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('🌸 Запуск бота Цветочная Лавка...'))
-        bot = FlowerShopBot()
-        bot.run()
+        raise CommandError(
+            "Polling mode is disabled. Start Django web app and run: "
+            "python manage.py telegram_webhook set"
+        )
