@@ -474,9 +474,11 @@ function renderPromo(promo) {
   if (!promoBanner) return;
   
   if (!promo || !promo.is_active) {
-    promoBanner.style.display = 'none';
+    // Keep static fallback banner from HTML when promo is not configured in API.
+    promoBanner.style.display = '';
     return;
   }
+  promoBanner.style.display = '';
   
   const promoContent = promoBanner.querySelector('.promo-content');
   if (promoContent) {

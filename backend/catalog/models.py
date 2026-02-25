@@ -78,11 +78,15 @@ class HeroSection(models.Model):
 
 class PromoBanner(models.Model):
     """Промо баннер"""
-    icon = models.CharField('Иконка (emoji)', max_length=10, default='🎁')
-    title = models.CharField('Заголовок', max_length=200, default='Скидка 10% за подписку!')
-    text = models.CharField('Текст', max_length=300, default='Подпишитесь на нашу группу через бота и получите скидку на первый заказ')
-    button_text = models.CharField('Текст кнопки', max_length=100, default='Подписаться')
-    button_link = models.CharField('Ссылка кнопки', max_length=200, blank=True)
+    icon = models.CharField('Иконка (emoji)', max_length=10, default='🌷')
+    title = models.CharField('Заголовок', max_length=200, default='Предзаказ тюльпанов к 8 марта 2026')
+    text = models.CharField(
+        'Текст',
+        max_length=300,
+        default='Оформите заказ заранее и получите скидку 10% на праздничные букеты.'
+    )
+    button_text = models.CharField('Текст кнопки', max_length=100, default='Предзаказать')
+    button_link = models.CharField('Ссылка кнопки', max_length=200, blank=True, default='catalog.html')
     is_active = models.BooleanField('Активен', default=True)
     
     class Meta:
