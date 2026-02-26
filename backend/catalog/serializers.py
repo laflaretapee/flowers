@@ -31,10 +31,25 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
     
     def get_average_rating(self, obj):
-        reviews = obj.reviews.filter(is_published=True)
+        annotated = getattr(obj, 'average_rating', None)
+        if annotated is not None:
+            return round(float(annotated), 1)
+        reviews = obj.reviews.filter(is_published=True).only('rating')
         if reviews.exists():
             return round(sum(r.rating for r in reviews) / reviews.count(), 1)
         return None
+
+
+class ProductListSerializer(serializers.ModelSerializer):
+    category = CategorySerializer(read_only=True)
+
+    class Meta:
+        model = Product
+        fields = [
+            'id', 'name', 'slug', 'description', 'short_description',
+            'price', 'hide_price', 'image', 'category', 'is_active', 'is_popular',
+            'order'
+        ]
 
 
 class ReviewSerializer(serializers.ModelSerializer):

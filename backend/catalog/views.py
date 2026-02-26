@@ -3,14 +3,16 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.cache import cache_page
 from django.utils import timezone
+from django.db.models import Avg, Q
 from .models import (
     Category, Product, Review, Order,
     SiteSettings, HeroSection, PromoBanner, DeliveryInfo
 )
 from .serializers import (
     CategorySerializer, ProductSerializer, ReviewSerializer,
-    SiteSettingsSerializer, HeroSectionSerializer, PromoBannerSerializer, DeliveryInfoSerializer
+    ProductListSerializer, SiteSettingsSerializer, HeroSectionSerializer, PromoBannerSerializer, DeliveryInfoSerializer
 )
 from .payments import yookassa_enabled, map_payment_status, notify_payment_status
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -19,17 +21,29 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Product.objects.filter(is_active=True).select_related('category').prefetch_related('images', 'reviews')
-    serializer_class = ProductSerializer
+    queryset = Product.objects.filter(is_active=True).select_related('category')
+    serializer_class = ProductListSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['price', 'order', 'created_at']
     ordering = ['order', '-is_popular']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return ProductSerializer
+        return ProductListSerializer
     
     def get_queryset(self):
         queryset = super().get_queryset()
         category = self.request.query_params.get('category', None)
         is_popular = self.request.query_params.get('is_popular', None)
+
+        if self.action == 'retrieve':
+            queryset = queryset.prefetch_related('images', 'reviews')
+        else:
+            queryset = queryset.annotate(
+                average_rating=Avg('reviews__rating', filter=Q(reviews__is_published=True))
+            )
         
         if category:
             queryset = queryset.filter(category_id=category)
@@ -63,6 +77,7 @@ class ReviewViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
         serializer.save(is_published=True)
 
 
+@cache_page(60)
 @api_view(['GET'])
 def site_content(request):
     """Получить весь контент сайта одним запросом"""
@@ -71,10 +86,10 @@ def site_content(request):
     promo = PromoBanner.get_promo()
     delivery = DeliveryInfo.get_delivery_info()
     categories = Category.objects.filter(is_active=True)
-    products = Product.objects.filter(is_active=True, is_popular=True).order_by('order', 'name')[:6]
+    products = Product.objects.filter(is_active=True, is_popular=True).select_related('category').order_by('order', 'name')[:6]
     # Если популярные не отмечены, чтобы блок на главной не был пустым — покажем первые 3 активных.
     if not products.exists():
-        products = Product.objects.filter(is_active=True).order_by('order', 'name')[:3]
+        products = Product.objects.filter(is_active=True).select_related('category').order_by('order', 'name')[:3]
     reviews = Review.objects.filter(is_published=True)[:6]
     
     context = {'request': request}
@@ -85,7 +100,7 @@ def site_content(request):
         'promo': PromoBannerSerializer(promo, context=context).data if promo.is_active else None,
         'delivery': DeliveryInfoSerializer(delivery, context=context).data,
         'categories': CategorySerializer(categories, many=True, context=context).data,
-        'products': ProductSerializer(products, many=True, context=context).data,
+        'products': ProductListSerializer(products, many=True, context=context).data,
         'reviews': ReviewSerializer(reviews, many=True, context=context).data,
     })
 

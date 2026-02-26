@@ -20,7 +20,7 @@ from aiogram.types import (
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.enums import ChatMemberStatus, ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.client.default import DefaultBotProperties
@@ -39,6 +39,7 @@ from catalog.payments import (
     fetch_payment,
     notify_payment_status,
 )
+from .fsm_storage import DjangoFSMStorage
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -1209,7 +1210,6 @@ async def begin_order_flow(callback: CallbackQuery, state: FSMContext, product_i
     await state.update_data(
         product_id=product_id,
         product_name=product_name,
-        price=price,
         is_subscribed=is_subscribed,
         promo_enabled=promo_enabled,
         discount_percent=discount_percent
@@ -1337,7 +1337,6 @@ async def begin_custom_order_contact(message: Message, state: FSMContext):
         is_custom=True,
         product_id=None,
         product_name="Индивидуальный букет",
-        price=Decimal('0'),
         is_subscribed=is_subscribed,
         promo_enabled=promo_enabled,
         discount_percent=discount_percent
@@ -1994,8 +1993,11 @@ class FlowerShopBot:
         )
         bot_instance = self.bot
         
-        # Создаем диспетчер
-        self.dp = Dispatcher(storage=MemoryStorage())
+        # В webhook-режиме состояние должно переживать несколько воркеров.
+        self.dp = Dispatcher(
+            storage=DjangoFSMStorage(),
+            events_isolation=SimpleEventIsolation(),
+        )
 
         # Middleware должен регистрироваться на router только один раз за процесс.
         if not _router_initialized:
