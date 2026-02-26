@@ -39,6 +39,9 @@ def robots_txt(request):
     text = (
         "User-agent: *\n"
         "Allow: /\n"
+        "Disallow: /admin/\n"
+        "Disallow: /api/\n"
+        "Disallow: /bot/\n"
         f"Sitemap: {base}/sitemap.xml\n"
     )
     return HttpResponse(text, content_type='text/plain')

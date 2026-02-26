@@ -2,9 +2,11 @@
 Django views for Telegram bot webhook.
 """
 import asyncio
+import threading
 import hashlib
 import json
 import logging
+from concurrent.futures import TimeoutError as FutureTimeout
 
 import requests
 from django.conf import settings
@@ -18,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 # Webhook secret token derived from bot token (for verifying requests from Telegram)
 _webhook_secret = None
+_webhook_lock = threading.Lock()
+_webhook_loop: asyncio.AbstractEventLoop | None = None
+_webhook_thread: threading.Thread | None = None
+_webhook_bot: FlowerShopBot | None = None
 
 
 def get_webhook_secret():
@@ -84,15 +90,30 @@ def get_webhook_info() -> tuple[bool, dict]:
     return bool(data.get("ok")), data
 
 
-async def _process_update_once(update_data: dict) -> None:
-    """Process single Telegram update in isolated async context."""
-    bot = FlowerShopBot()
-    if not bot._setup():
-        return
-    try:
-        await bot.process_update(update_data)
-    finally:
-        await bot.close()
+def _run_loop(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def _ensure_webhook_runtime() -> tuple[FlowerShopBot, asyncio.AbstractEventLoop]:
+    global _webhook_loop, _webhook_thread, _webhook_bot
+    with _webhook_lock:
+        if _webhook_loop is None or _webhook_thread is None or not _webhook_thread.is_alive():
+            _webhook_loop = asyncio.new_event_loop()
+            _webhook_thread = threading.Thread(
+                target=_run_loop,
+                args=(_webhook_loop,),
+                name="telegram-webhook-loop",
+                daemon=True,
+            )
+            _webhook_thread.start()
+
+        if _webhook_bot is None:
+            _webhook_bot = FlowerShopBot()
+            if not _webhook_bot._setup():
+                raise RuntimeError("Failed to initialize Telegram bot runtime")
+
+        return _webhook_bot, _webhook_loop
 
 
 @csrf_exempt
@@ -112,7 +133,11 @@ def telegram_webhook(request):
         return HttpResponse('Bad Request', status=400)
 
     try:
-        asyncio.run(_process_update_once(update_data))
+        bot, loop = _ensure_webhook_runtime()
+        future = asyncio.run_coroutine_threadsafe(bot.process_update(update_data), loop)
+        future.result(timeout=20)
+    except FutureTimeout:
+        logger.error("Timeout while processing Telegram update")
     except Exception as e:
         logger.error("Error processing Telegram update: %s", e, exc_info=True)
 

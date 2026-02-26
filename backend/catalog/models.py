@@ -19,7 +19,7 @@ class SiteSettings(models.Model):
     site_name = models.CharField('Название сайта', max_length=200, default='Цветочная Лавка')
     phone = models.CharField('Телефон', max_length=50, default='+7 (999) 123-45-67')
     address = models.TextField('Адрес', blank=True)
-    telegram_bot_link = models.URLField('Ссылка на Telegram бота', blank=True, default='https://t.me/testikbotick_bot')
+    telegram_bot_link = models.URLField('Ссылка на Telegram бота', blank=True, default='https://t.me/flowersraevka_bot')
     instagram_link = models.URLField('Instagram', blank=True)
     vk_link = models.URLField('VKontakte', blank=True)
     telegram_channel_link = models.URLField('Telegram канал', blank=True)
