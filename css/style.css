@@ -72,7 +72,19 @@ a {
 .logo {
   display: flex;
   align-items: center;
-  max-width: 240px; /* можно вместить логотип побольше, не сдвигая меню */
+}
+
+.site-header .logo {
+  max-width: 220px;
+  flex: 0 0 auto;
+}
+
+.site-header .logo img {
+  width: auto;
+  max-width: 100%;
+  height: 88px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .nav {
@@ -1107,8 +1119,12 @@ a {
     gap: 12px;
   }
 
-  .logo img {
-    height: 70px; /* поменьше логотип на мобильных, чтобы не занимал весь экран */
+  .site-header .logo {
+    max-width: 168px;
+  }
+
+  .site-header .logo img {
+    height: 64px;
   }
 
   .nav {
