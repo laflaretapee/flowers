@@ -65,6 +65,10 @@ a {
   gap: 24px;
 }
 
+.site-header .header-inner {
+  max-width: 980px;
+}
+
 .logo {
   display: flex;
   align-items: center;
@@ -816,6 +820,57 @@ a {
 .privacy-link:hover {
   color: #fff;
   text-decoration-color: #fff;
+}
+
+.footer-extra-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.developer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #cfcfcf;
+  text-decoration: none;
+  transition: color 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.developer-link img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.developer-link .developer-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.developer-link .developer-label {
+  color: #bdbdbd;
+  font-size: 12px;
+}
+
+.developer-link .developer-name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.developer-link:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* catalog page */

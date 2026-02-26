@@ -22,13 +22,13 @@ function resolveMediaUrl(value) {
 
 // Global settings cache
 let siteSettings = {
-  telegram_bot_link: 'https://t.me/testikbotick_bot'
+  telegram_bot_link: 'https://t.me/flowersraevka_bot'
 };
 
 let allCatalogProducts = [];
 
 function buildBotOrderLink(baseLink, productId) {
-  const fallback = `https://t.me/testikbotick_bot?start=product_${productId}`;
+  const fallback = `https://t.me/flowersraevka_bot?start=product_${productId}`;
   if (!baseLink) return fallback;
 
   try {
@@ -48,7 +48,7 @@ function buildBotOrderLink(baseLink, productId) {
 }
 
 function buildBotCustomLink(baseLink) {
-  const fallback = 'https://t.me/testikbotick_bot?start=custom';
+  const fallback = 'https://t.me/flowersraevka_bot?start=custom';
   if (!baseLink) return fallback;
 
   try {
@@ -261,25 +261,25 @@ function initCustomBouquetSuggestion() {
 
 // Загрузка полного каталога
 async function loadFullCatalog() {
-  // Сначала загружаем общие настройки (футер, контакты)
-  try {
-    const settingsResponse = await fetch(`${API_BASE_URL}/site-content/`);
-    if (settingsResponse.ok) {
-      const data = await settingsResponse.json();
-      renderSettings(data.settings);
+  const params = new URLSearchParams(window.location.search);
+  const categoryId = params.get('category');
+  const productsUrl = categoryId
+    ? `${API_BASE_URL}/products/?category=${encodeURIComponent(categoryId)}`
+    : `${API_BASE_URL}/products/`;
+
+  const settingsPromise = (async () => {
+    try {
+      const settingsResponse = await fetch(`${API_BASE_URL}/site-content/`);
+      if (settingsResponse.ok) {
+        const data = await settingsResponse.json();
+        renderSettings(data.settings);
+      }
+    } catch (error) {
+      console.log('Не удалось загрузить настройки сайта:', error);
     }
-  } catch (error) {
-    console.log('Не удалось загрузить настройки сайта:', error);
-  }
+  })();
 
-  // Загружаем товары
   try {
-    const params = new URLSearchParams(window.location.search);
-    const categoryId = params.get('category');
-    const productsUrl = categoryId
-      ? `${API_BASE_URL}/products/?category=${encodeURIComponent(categoryId)}`
-      : `${API_BASE_URL}/products/`;
-
     const products = await fetchAllProducts(productsUrl);
     allCatalogProducts = products;
 
@@ -287,6 +287,7 @@ async function loadFullCatalog() {
     initCatalogFilters();
     applyCatalogFilters();
     initCustomBouquetSuggestion();
+    await settingsPromise;
   } catch (error) {
     console.error('Ошибка загрузки каталога:', error);
     const container = document.querySelector('#full-catalog-grid');
@@ -507,9 +508,14 @@ function renderCategories(categories) {
   const container = document.querySelector('#occasions .grid');
   if (!container || !categories || !categories.length) return;
   
-  container.innerHTML = categories.map(cat => `
+  container.innerHTML = categories.map((cat, index) => `
     <a class="card category-card category-link" href="catalog.html?category=${encodeURIComponent(cat.id)}" aria-label="Открыть категорию ${escapeHtml(cat.name)}">
-      <img src="${cat.image ? escapeHtml(resolveMediaUrl(cat.image)) : 'https://via.placeholder.com/400x300?text=' + encodeURIComponent(cat.name || '')}" alt="${escapeHtml(cat.name)}">
+      <img
+        src="${cat.image ? escapeHtml(resolveMediaUrl(cat.image)) : 'https://via.placeholder.com/400x300?text=' + encodeURIComponent(cat.name || '')}"
+        alt="${escapeHtml(cat.name)}"
+        loading="${index < 2 ? 'eager' : 'lazy'}"
+        decoding="async"
+      >
       <h3>${escapeHtml(cat.name)}</h3>
       <p>${escapeHtml(cat.description || '')}</p>
     </a>
@@ -598,23 +604,28 @@ function renderProducts(products, containerSelector) {
   const container = document.querySelector(containerSelector);
   if (!container) return;
   
-  container.innerHTML = products.map(product => {
+  container.innerHTML = products.map((product, index) => {
     // Формируем HTML для цены
     let priceHtml = '';
     if (!product.hide_price) {
       priceHtml = `<span class="product-price">${escapeHtml(product.price)} ₽</span>`;
     }
 
-    const imageUrl = product.image ? escapeHtml(product.image) : 'https://via.placeholder.com/400x300';
     const resolvedImageUrl = product.image ? escapeHtml(resolveMediaUrl(product.image)) : 'https://via.placeholder.com/400x300';
     const productName = escapeHtml(product.name);
-    const productDesc = escapeHtml(product.description || '');
+    const productDesc = escapeHtml(product.short_description || product.description || '');
     const orderLink = escapeHtml(buildBotOrderLink(siteSettings.telegram_bot_link, product.id));
     
     return `
     <article class="card product-card">
       <div class="product-photo">
-        <img src="${resolvedImageUrl}" alt="${productName}">
+        <img
+          src="${resolvedImageUrl}"
+          alt="${productName}"
+          loading="${index < 3 ? 'eager' : 'lazy'}"
+          decoding="async"
+          fetchpriority="${index === 0 ? 'high' : 'auto'}"
+        >
       </div>
       <h3>${productName}</h3>
       <p class="product-desc">${productDesc}</p>
