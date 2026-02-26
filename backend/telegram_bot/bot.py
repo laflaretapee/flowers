@@ -2003,6 +2003,17 @@ class FlowerShopBot:
             router.callback_query.middleware(SubscriptionMiddleware())
             _router_initialized = True
 
+        # Router instance is module-level; in webhook mode we can re-create Dispatcher
+        # per request, so detach router from previous parent dispatcher first.
+        previous_parent = getattr(router, "_parent_router", None)
+        if previous_parent is not None and previous_parent is not self.dp:
+            try:
+                if router in previous_parent.sub_routers:
+                    previous_parent.sub_routers.remove(router)
+            except Exception:
+                pass
+            router._parent_router = None
+
         # Регистрируем роутер в Dispatcher
         self.dp.include_router(router)
         
