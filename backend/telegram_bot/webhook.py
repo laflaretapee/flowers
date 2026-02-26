@@ -1,18 +1,18 @@
 """
 Django views for Telegram bot webhook.
 """
+import asyncio
 import hashlib
 import json
 import logging
 
 import requests
-from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .bot import get_webhook_bot
+from .bot import FlowerShopBot
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,17 @@ def get_webhook_info() -> tuple[bool, dict]:
     return bool(data.get("ok")), data
 
 
+async def _process_update_once(update_data: dict) -> None:
+    """Process single Telegram update in isolated async context."""
+    bot = FlowerShopBot()
+    if not bot._setup():
+        return
+    try:
+        await bot.process_update(update_data)
+    finally:
+        await bot.close()
+
+
 @csrf_exempt
 @require_POST
 def telegram_webhook(request):
@@ -101,8 +112,7 @@ def telegram_webhook(request):
         return HttpResponse('Bad Request', status=400)
 
     try:
-        bot = get_webhook_bot()
-        async_to_sync(bot.process_update)(update_data)
+        asyncio.run(_process_update_once(update_data))
     except Exception as e:
         logger.error("Error processing Telegram update: %s", e, exc_info=True)
 

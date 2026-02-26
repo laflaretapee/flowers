@@ -2022,6 +2022,15 @@ class FlowerShopBot:
         update = Update.model_validate(update_data, context={"bot": self.bot})
         await self.dp.feed_update(self.bot, update)
 
+    async def close(self):
+        """Корректно закрыть HTTP-сессию Telegram клиента."""
+        if not self.bot:
+            return
+        try:
+            await self.bot.session.close()
+        except Exception:
+            pass
+
 
 # Singleton для webhook-режима
 _webhook_bot: FlowerShopBot | None = None
