@@ -180,6 +180,8 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_GROUP_ID = os.getenv('TELEGRAM_GROUP_ID', '')
 TELEGRAM_CHANNEL_ID = os.getenv('TELEGRAM_CHANNEL_ID', '')
+# Служебный чат для заявок (если пусто — используется TELEGRAM_GROUP_ID).
+TELEGRAM_ORDERS_CHAT_ID = os.getenv('TELEGRAM_ORDERS_CHAT_ID', '').strip()
 WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '').rstrip('/')
 if not WEBHOOK_HOST and RENDER_EXTERNAL_HOSTNAME:
     WEBHOOK_HOST = f'https://{RENDER_EXTERNAL_HOSTNAME}'

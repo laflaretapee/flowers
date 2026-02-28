@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import os
 import re
 import csv
+import html
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict
 import requests
@@ -37,7 +38,10 @@ from catalog.taxi_integration import TaxiDeliveryIntegration
 from catalog.payments import (
     update_order_from_payment,
     fetch_payment,
-    notify_payment_status,
+    create_payment_for_order,
+    get_return_url,
+    get_manual_payment_url,
+    yookassa_enabled,
 )
 from .fsm_storage import DjangoFSMStorage
 
@@ -60,6 +64,10 @@ class CustomBouquetStates(StatesGroup):
     waiting_for_style = State()
     waiting_for_budget = State()
     waiting_for_deadline = State()
+
+
+class PreOrderStates(StatesGroup):
+    waiting_for_datetime = State()
 
 
 class AdminStates(StatesGroup):
@@ -295,6 +303,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     """Главное меню"""
     keyboard = [
         [KeyboardButton(text="📋 Каталог"), KeyboardButton(text="💐 Собрать свой букет")],
+        [KeyboardButton(text="🌷 Предзаказ на 8 марта")],
         [KeyboardButton(text="🎁 Акции"), KeyboardButton(text="📞 Контакты")],
         [KeyboardButton(text="🧾 Мои заказы"), KeyboardButton(text="⭐️ Отзывы")],
         [KeyboardButton(text="📝 Оставить отзыв")]
@@ -626,13 +635,244 @@ ADMIN_ORDERS_PAGE_SIZE = 10
 def order_status_icon(status: str) -> str:
     return {
         'new': '🆕',
+        'processing': '🟡',
+        'ready': '📦',
+        'completed': '✅',
+        'cancelled': '❌',
+        'expired': '⌛',
+        # legacy statuses (for old rows)
         'confirmed': '✅',
         'in_progress': '🛠️',
-        'ready': '📦',
         'delivering': '🚚',
-        'completed': '🏁',
-        'cancelled': '❌',
     }.get(status, 'ℹ️')
+
+
+def get_orders_chat_id() -> str:
+    explicit = (getattr(settings, 'TELEGRAM_ORDERS_CHAT_ID', '') or '').strip()
+    fallback = (getattr(settings, 'TELEGRAM_GROUP_ID', '') or '').strip()
+    return explicit or fallback
+
+
+def order_status_title(status: str) -> str:
+    return {
+        'new': '🆕 Новый',
+        'processing': '🟡 В работе',
+        'ready': '🟢 Готов',
+        'completed': '✅ Завершен',
+        'cancelled': '❌ Отменен',
+        'expired': '⌛ Просрочен',
+        # legacy statuses
+        'confirmed': '✅ Подтвержден',
+        'in_progress': '🛠️ В работе',
+        'delivering': '🚚 Доставляется',
+    }.get(status, 'ℹ️ Статус')
+
+
+def build_order_group_keyboard(order: Order) -> InlineKeyboardMarkup | None:
+    rows: list[list[InlineKeyboardButton]] = []
+    if order.status == 'new':
+        rows.append([InlineKeyboardButton(text="🟡 Взять в работу", callback_data=f"svc_take_{order.id}")])
+    elif order.status == 'processing':
+        rows.append([InlineKeyboardButton(text="🟢 Готово", callback_data=f"svc_ready_{order.id}")])
+        rows.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"svc_cancel_{order.id}")])
+    elif order.status == 'ready':
+        rows.append([InlineKeyboardButton(text="✅ Завершить", callback_data=f"svc_complete_{order.id}")])
+        rows.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"svc_cancel_{order.id}")])
+        if order.payment_status != 'succeeded':
+            rows.append([InlineKeyboardButton(text="⌛ Не оплатил (expired)", callback_data=f"svc_expire_{order.id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+def payment_status_label(status: str) -> str:
+    return {
+        'not_paid': 'Не оплачен',
+        'pending': 'Ожидает оплаты',
+        'succeeded': 'Оплачен',
+        'canceled': 'Платеж отменен',
+    }.get(status, status or '—')
+
+
+def format_items_for_group(items: list[OrderItem]) -> str:
+    if not items:
+        return 'Индивидуальный букет'
+    parts = [f"{it.product_name} x{it.quantity}" for it in items[:4]]
+    if len(items) > 4:
+        parts.append(f"+{len(items) - 4} поз.")
+    return ", ".join(parts)
+
+
+async def build_order_group_message(order_id: int) -> tuple[str, InlineKeyboardMarkup | None]:
+    @sync_to_async
+    def _fetch():
+        order = Order.objects.prefetch_related('items').get(pk=order_id)
+        items = list(order.items.all())
+        return order, items
+
+    order, items = await _fetch()
+    customer_name = html.escape((order.customer_name or '').strip() or 'Без имени')
+    telegram_username = (order.telegram_username or '').strip().lstrip('@')
+    if telegram_username:
+        profile_link = f'<a href="https://t.me/{html.escape(telegram_username)}">@{html.escape(telegram_username)}</a>'
+    else:
+        profile_link = f'<a href="tg://user?id={order.telegram_user_id}">профиль</a>'
+
+    composition = html.escape(format_items_for_group(items))
+    requested_delivery = html.escape((order.requested_delivery or '').strip() or 'Как можно скорее')
+    title = order_status_title(order.status)
+    payment_label = html.escape(payment_status_label(order.payment_status))
+
+    text = (
+        f"{title} | Заказ #{order.id}\n"
+        f"👤 {customer_name}\n"
+        f"🔗 {profile_link}\n"
+        f"💐 {composition}\n"
+        f"📅 {requested_delivery}\n"
+        f"💳 {payment_label}\n"
+    )
+
+    if order.is_preorder:
+        text += "🌷 Предзаказ: да\n"
+
+    if order.processing_by_user_id or order.processing_by_username:
+        processor_username = (order.processing_by_username or '').strip().lstrip('@')
+        if processor_username:
+            text += f"👨‍🔧 Обрабатывает: @{html.escape(processor_username)}\n"
+        else:
+            text += f"👨‍🔧 Обрабатывает: <a href=\"tg://user?id={order.processing_by_user_id}\">мастер</a>\n"
+
+    return text.strip(), build_order_group_keyboard(order)
+
+
+async def post_order_to_group(order_id: int) -> None:
+    orders_chat_id = get_orders_chat_id()
+    if not orders_chat_id or not bot_instance:
+        return
+
+    try:
+        text, keyboard = await build_order_group_message(order_id)
+        sent = await bot_instance.send_message(
+            chat_id=orders_chat_id,
+            text=text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+
+        @sync_to_async
+        def _bind():
+            order = Order.objects.get(pk=order_id)
+            order.service_chat_id = str(orders_chat_id)
+            order.service_message_id = int(sent.message_id)
+            order.save(update_fields=['service_chat_id', 'service_message_id', 'updated_at', 'phone_normalized'])
+
+        await _bind()
+    except Exception as exc:
+        logger.warning("Не удалось отправить заказ #%s в служебный чат: %s", order_id, exc)
+
+
+async def refresh_order_group_message(order_id: int) -> None:
+    if not bot_instance:
+        return
+
+    @sync_to_async
+    def _meta():
+        order = Order.objects.filter(pk=order_id).first()
+        if not order:
+            return None, None
+        return order.service_chat_id, order.service_message_id
+
+    service_chat_id, service_message_id = await _meta()
+    if not service_chat_id or not service_message_id:
+        return
+
+    text, keyboard = await build_order_group_message(order_id)
+    try:
+        await bot_instance.edit_message_text(
+            chat_id=service_chat_id,
+            message_id=service_message_id,
+            text=text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+    except TelegramBadRequest as exc:
+        msg = str(exc).lower()
+        if "message is not modified" in msg:
+            return
+        if "message to edit not found" in msg or "can't be edited" in msg:
+            await post_order_to_group(order_id)
+            return
+        logger.warning("Не удалось отредактировать служебное сообщение заказа #%s: %s", order_id, exc)
+    except Exception as exc:
+        logger.warning("Не удалось обновить сообщение заказа #%s: %s", order_id, exc)
+
+
+async def apply_group_order_action(
+    order_id: int,
+    action: str,
+    actor_id: int,
+    actor_username: str | None,
+) -> tuple[bool, str]:
+    terminal = {'completed', 'cancelled', 'expired'}
+
+    @sync_to_async
+    def _apply() -> tuple[bool, str]:
+        try:
+            order = Order.objects.get(pk=order_id)
+        except Order.DoesNotExist:
+            return False, "Заказ не найден"
+
+        if order.status in terminal:
+            return False, "Заказ уже закрыт"
+
+        update_fields = ['updated_at', 'phone_normalized']
+        actor_username_clean = (actor_username or '').strip().lstrip('@')
+
+        if action == 'take':
+            if order.status != 'new':
+                return False, "Заказ уже взят в работу"
+            order.status = 'processing'
+            order.processing_by_user_id = actor_id
+            order.processing_by_username = actor_username_clean
+            update_fields.extend(['status', 'processing_by_user_id', 'processing_by_username'])
+            order.save(update_fields=update_fields)
+            return True, "Взято в работу"
+
+        if action == 'ready':
+            if order.status not in {'new', 'processing'}:
+                return False, "Нельзя перевести в «Готов»"
+            order.status = 'ready'
+            if not order.processing_by_user_id:
+                order.processing_by_user_id = actor_id
+                order.processing_by_username = actor_username_clean
+                update_fields.extend(['processing_by_user_id', 'processing_by_username'])
+            update_fields.append('status')
+            order.save(update_fields=update_fields)
+            return True, "Заказ отмечен как готовый"
+
+        if action == 'complete':
+            if order.status not in {'processing', 'ready'}:
+                return False, "Нельзя завершить заказ в текущем статусе"
+            order.status = 'completed'
+            update_fields.append('status')
+            order.save(update_fields=update_fields)
+            return True, "Заказ завершен"
+
+        if action == 'cancel':
+            order.status = 'cancelled'
+            update_fields.append('status')
+            order.save(update_fields=update_fields)
+            return True, "Заказ отменен"
+
+        if action == 'expire':
+            if order.payment_status == 'succeeded':
+                return False, "Заказ уже оплачен"
+            order.status = 'expired'
+            update_fields.append('status')
+            order.save(update_fields=update_fields)
+            return True, "Заказ помечен как expired"
+
+        return False, "Неизвестное действие"
+
+    return await _apply()
 
 
 async def require_admin_message(message: Message) -> bool:
@@ -647,6 +887,35 @@ async def require_admin_callback(callback: CallbackQuery) -> bool:
     if not ok:
         await callback.answer("Нет доступа", show_alert=True)
     return ok
+
+
+@router.callback_query(F.data.startswith("svc_"))
+async def service_group_order_actions(callback: CallbackQuery):
+    if not await require_admin_callback(callback):
+        return
+
+    parts = (callback.data or "").split("_", 2)
+    # svc_<action>_<order_id>
+    if len(parts) != 3:
+        await callback.answer("Некорректная команда", show_alert=True)
+        return
+
+    action = parts[1]
+    try:
+        order_id = int(parts[2])
+    except Exception:
+        await callback.answer("Некорректный номер заказа", show_alert=True)
+        return
+
+    changed, result_text = await apply_group_order_action(
+        order_id=order_id,
+        action=action,
+        actor_id=callback.from_user.id,
+        actor_username=callback.from_user.username,
+    )
+    if changed:
+        await refresh_order_group_message(order_id)
+    await callback.answer(result_text, show_alert=not changed)
 
 
 @router.message(Command("admin"))
@@ -743,7 +1012,15 @@ async def build_admin_order_detail(order_id: int) -> tuple[str, InlineKeyboardMa
     text += f"👤 {order.customer_name}\n"
     text += f"📞 {order.phone}\n"
     text += f"📍 {order.address}\n"
+    if order.requested_delivery:
+        text += f"📅 {order.requested_delivery}\n"
+    if order.is_preorder:
+        text += "🌷 Предзаказ: да\n"
     text += f"💳 Итог: {format_money(to_decimal(order.total_price))} ₽\n"
+    text += f"💳 Оплата: {payment_status_label(order.payment_status)}\n"
+    if order.processing_by_user_id or order.processing_by_username:
+        assignee = f"@{order.processing_by_username}" if order.processing_by_username else f"id={order.processing_by_user_id}"
+        text += f"👨‍🔧 Обрабатывает: {assignee}\n"
     if order.discount_percent:
         text += f"🎁 Скидка: {order.discount_percent}%\n"
     if order.comment:
@@ -759,16 +1036,15 @@ async def build_admin_order_detail(order_id: int) -> tuple[str, InlineKeyboardMa
     buttons: list[list[InlineKeyboardButton]] = []
     # Status actions
     buttons.append([
-        InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"admin_status_{order.id}_confirmed"),
-        InlineKeyboardButton(text="🛠️ В работу", callback_data=f"admin_status_{order.id}_in_progress"),
-    ])
-    buttons.append([
+        InlineKeyboardButton(text="🟡 В работу", callback_data=f"admin_status_{order.id}_processing"),
         InlineKeyboardButton(text="📦 Готов (фото)", callback_data=f"admin_ready_{order.id}"),
-        InlineKeyboardButton(text="🚚 Доставка", callback_data=f"admin_status_{order.id}_delivering"),
     ])
     buttons.append([
-        InlineKeyboardButton(text="🏁 Завершить", callback_data=f"admin_status_{order.id}_completed"),
+        InlineKeyboardButton(text="✅ Завершить", callback_data=f"admin_status_{order.id}_completed"),
         InlineKeyboardButton(text="❌ Отменить", callback_data=f"admin_status_{order.id}_cancelled"),
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="⌛ Просрочить", callback_data=f"admin_status_{order.id}_expired"),
     ])
 
     if order.ready_photo:
@@ -792,11 +1068,17 @@ async def admin_order_open(callback: CallbackQuery):
 async def admin_order_set_status(callback: CallbackQuery):
     if not await require_admin_callback(callback):
         return
-    await callback.answer()
     parts = callback.data.split("_", 3)
     # admin_status_<id>_<status>
     order_id = int(parts[2])
     new_status = parts[3]
+    actor_id = callback.from_user.id
+    actor_username = (callback.from_user.username or '').strip().lstrip('@')
+    allowed_statuses = {choice[0] for choice in Order.STATUS_CHOICES}
+    if new_status not in allowed_statuses:
+        await callback.answer("Недопустимый статус", show_alert=True)
+        return
+
     if new_status == 'ready':
         # Ready requires a photo; use admin_ready_<id>
         await callback.answer("Для статуса «Готов» нужен снимок.", show_alert=True)
@@ -806,6 +1088,11 @@ async def admin_order_set_status(callback: CallbackQuery):
     def _update():
         order = Order.objects.get(pk=order_id)
         order.status = new_status
+        if new_status == 'processing':
+            order.processing_by_user_id = actor_id
+            order.processing_by_username = actor_username
+            order.save(update_fields=['status', 'processing_by_user_id', 'processing_by_username', 'updated_at', 'phone_normalized'])
+            return
         order.save(update_fields=['status', 'updated_at', 'phone_normalized'])
 
     try:
@@ -815,7 +1102,9 @@ async def admin_order_set_status(callback: CallbackQuery):
         logger.warning("Admin status update failed: %s", exc)
         return
 
+    await refresh_order_group_message(order_id)
     text, keyboard = await build_admin_order_detail(order_id)
+    await callback.answer("Статус обновлен")
     await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
@@ -902,6 +1191,7 @@ async def admin_order_ready_photo_receive(message: Message, state: FSMContext):
             logger.warning("Manual ready photo notify failed: %s", exc)
 
     await state.clear()
+    await refresh_order_group_message(order_id)
     await message.answer(f"✅ Фото сохранено, заказ #{order_id} помечен как «Готов».", reply_markup=get_admin_keyboard())
 
 
@@ -1168,26 +1458,27 @@ async def send_product_card(message: Message, product: Product):
         await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
-async def begin_order_flow(callback: CallbackQuery, state: FSMContext, product_id: int):
-    """Общее начало оформления заказа"""
-    try:
-        product = await sync_to_async(Product.objects.get)(id=product_id, is_active=True)
-    except Product.DoesNotExist:
-        await callback.answer("Товар не найден")
-        return
-
-    user_id = callback.from_user.id
-    is_subscribed = await check_user_subscription(user_id)
-
-    promo_enabled = getattr(settings, 'PROMO_ENABLED', True)
-    discount_percent = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
-
-    price = to_decimal(await sync_to_async(lambda: product.price)())
-    product_name = await sync_to_async(lambda: product.name)()
-
-    text = f"🛒 <b>Оформление заказа</b>\n\n"
+async def start_order_name_step(
+    message: Message,
+    state: FSMContext,
+    *,
+    product_id: int | None,
+    product_name: str,
+    product_price: Decimal | None = None,
+    is_subscribed: bool,
+    promo_enabled: bool,
+    discount_percent: int,
+    is_custom: bool = False,
+    is_preorder: bool = False,
+    requested_delivery: str = '',
+):
+    text = "🛒 <b>Оформление заказа</b>\n\n"
     text += f"🌸 {product_name}\n"
-    text += f"💰 Цена: {format_money(price)} ₽\n"
+    if product_price is not None:
+        text += f"💰 Цена: {format_money(product_price)} ₽\n"
+    if is_preorder:
+        requested_delivery_text = requested_delivery.strip() or "8 марта, удобное время"
+        text += f"🌷 Предзаказ: {requested_delivery_text}\n"
 
     if promo_enabled:
         if is_subscribed:
@@ -1212,10 +1503,68 @@ async def begin_order_flow(callback: CallbackQuery, state: FSMContext, product_i
         product_name=product_name,
         is_subscribed=is_subscribed,
         promo_enabled=promo_enabled,
-        discount_percent=discount_percent
+        discount_percent=discount_percent,
+        is_custom=is_custom,
+        is_preorder=is_preorder,
+        requested_delivery=(requested_delivery or '').strip(),
+        preorder_mode=False,
+        pending_order_product_id=None,
+        pending_order_product_name=None,
+        pending_order_is_subscribed=None,
+        pending_order_promo_enabled=None,
+        pending_order_discount_percent=None,
     )
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=ReplyKeyboardRemove())
 
-    await callback.message.answer(text, parse_mode=ParseMode.HTML)
+
+async def begin_order_flow(callback: CallbackQuery, state: FSMContext, product_id: int):
+    """Общее начало оформления заказа"""
+    try:
+        product = await sync_to_async(Product.objects.get)(id=product_id, is_active=True)
+    except Product.DoesNotExist:
+        await callback.answer("Товар не найден")
+        return
+
+    user_id = callback.from_user.id
+    is_subscribed = await check_user_subscription(user_id)
+
+    promo_enabled = getattr(settings, 'PROMO_ENABLED', True)
+    discount_percent = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
+
+    price = to_decimal(await sync_to_async(lambda: product.price)())
+    product_name = await sync_to_async(lambda: product.name)()
+    state_data = await state.get_data()
+    preorder_mode = bool(state_data.get('preorder_mode'))
+
+    if preorder_mode:
+        await state.set_state(PreOrderStates.waiting_for_datetime)
+        await state.update_data(
+            pending_order_product_id=product_id,
+            pending_order_product_name=product_name,
+            pending_order_is_subscribed=is_subscribed,
+            pending_order_promo_enabled=promo_enabled,
+            pending_order_discount_percent=discount_percent,
+        )
+        await callback.message.answer(
+            "🌷 <b>Предзаказ на 8 марта</b>\n\n"
+            f"Вы выбрали: {product_name} ({format_money(price)} ₽)\n\n"
+            "Теперь укажите дату и время вручения (например: 8 марта, 12:00).\n"
+            "<i>/cancel — отмена</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    await start_order_name_step(
+        callback.message,
+        state,
+        product_id=product_id,
+        product_name=product_name,
+        product_price=price,
+        is_subscribed=is_subscribed,
+        promo_enabled=promo_enabled,
+        discount_percent=discount_percent,
+        is_custom=False,
+    )
 
 
 @router.callback_query(F.data.startswith("order_"))
@@ -1224,6 +1573,61 @@ async def start_order(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     product_id = int(callback.data.split("_")[1])
     await begin_order_flow(callback, state, product_id)
+
+
+@router.message(F.text == "🌷 Предзаказ на 8 марта")
+async def start_preorder(message: Message, state: FSMContext):
+    await state.clear()
+    await state.update_data(preorder_mode=True)
+    await message.answer(
+        "🌷 <b>Режим предзаказа включен</b>\n\n"
+        "Выберите букет в каталоге. После выбора укажете дату и время вручения.\n"
+        "Для предзаказа будет сразу создана ссылка на оплату.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_keyboard(),
+    )
+    await send_catalog_menu(message)
+
+
+@router.message(PreOrderStates.waiting_for_datetime)
+async def process_preorder_datetime(message: Message, state: FSMContext):
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer("❌ Предзаказ отменен.", reply_markup=get_main_keyboard())
+        return
+
+    requested_delivery = (message.text or '').strip()
+    if not requested_delivery:
+        await message.answer("Укажите дату и время текстом. Пример: 8 марта, 12:00")
+        return
+
+    data = await state.get_data()
+    product_id = data.get('pending_order_product_id')
+    product_name = data.get('pending_order_product_name') or 'Букет'
+    is_subscribed = bool(data.get('pending_order_is_subscribed'))
+    promo_enabled = bool(data.get('pending_order_promo_enabled', True))
+    discount_percent = int(data.get('pending_order_discount_percent') or 10)
+
+    if not product_id:
+        await state.clear()
+        await message.answer(
+            "Не удалось найти выбранный букет. Нажмите «🌷 Предзаказ на 8 марта» и выберите заново.",
+            reply_markup=get_main_keyboard(),
+        )
+        return
+
+    await start_order_name_step(
+        message,
+        state,
+        product_id=int(product_id),
+        product_name=product_name,
+        is_subscribed=is_subscribed,
+        promo_enabled=promo_enabled,
+        discount_percent=discount_percent,
+        is_custom=False,
+        is_preorder=True,
+        requested_delivery=requested_delivery,
+    )
 
 
 @router.callback_query(F.data.startswith("confirm_order_"))
@@ -1312,37 +1716,21 @@ async def begin_custom_order_contact(message: Message, state: FSMContext):
     promo_enabled = getattr(settings, 'PROMO_ENABLED', True)
     discount_percent = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
 
-    text = (
+    await message.answer(
         "💐 <b>Индивидуальный букет</b>\n\n"
-        "Мы учтем ваши пожелания и свяжемся для подтверждения.\n\n"
+        "Учтем ваши пожелания и оформим заявку.",
+        parse_mode=ParseMode.HTML,
     )
-
-    if promo_enabled:
-        if is_subscribed:
-            text += (
-                f"🎁 Скидка {discount_percent}% на первый полученный заказ "
-                f"будет рассчитана после указания номера.\n\n"
-            )
-        else:
-            text += (
-                f"🎁 Скидка {discount_percent}% доступна подписчикам.\n"
-                "Подпишитесь на канал, чтобы получить скидку.\n\n"
-            )
-
-    text += "👤 <b>Шаг 1/4:</b> Введите ваше имя\n\n"
-    text += "<i>Или отправьте /cancel для отмены</i>"
-
-    await state.set_state(OrderStates.waiting_for_name)
-    await state.update_data(
-        is_custom=True,
+    await start_order_name_step(
+        message,
+        state,
         product_id=None,
         product_name="Индивидуальный букет",
         is_subscribed=is_subscribed,
         promo_enabled=promo_enabled,
-        discount_percent=discount_percent
+        discount_percent=discount_percent,
+        is_custom=True,
     )
-
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=ReplyKeyboardRemove())
 
 
 @router.message(Command("cancel"))
@@ -1558,6 +1946,8 @@ async def create_order(message: Message, state: FSMContext):
         product_id = data.get('product_id')
         discount = data.get('discount', 0)
         is_custom = data.get('is_custom', False)
+        is_preorder = bool(data.get('is_preorder', False))
+        requested_delivery = (data.get('requested_delivery') or '').strip()
         custom_style = data.get('custom_style', '')
         custom_budget = data.get('custom_budget', '')
         custom_deadline = data.get('custom_deadline', '')
@@ -1566,6 +1956,8 @@ async def create_order(message: Message, state: FSMContext):
         phone = data.get('phone', 'Не указан')
         address = data.get('address', 'Не указан')
         comment = data.get('comment', '')
+        if not requested_delivery and custom_deadline:
+            requested_delivery = custom_deadline
 
         product = None
         product_name = data.get('product_name', 'Букет')
@@ -1633,6 +2025,8 @@ async def create_order(message: Message, state: FSMContext):
                     phone=phone,
                     address=address,
                     comment=order_comment,
+                    is_preorder=is_preorder,
+                    requested_delivery=requested_delivery,
                     total_price=final_price,
                     discount_percent=discount,
                     has_subscription=is_subscribed
@@ -1648,6 +2042,38 @@ async def create_order(message: Message, state: FSMContext):
                 return order
         
         order = await create_order_in_db()
+
+        payment_url = ''
+        has_yookassa = yookassa_enabled()
+        if is_preorder and final_price > 0:
+            @sync_to_async
+            def _prepare_payment() -> tuple[str, str]:
+                db_order = Order.objects.get(pk=order.id)
+                current_payment_url = db_order.payment_url or ''
+
+                if not current_payment_url and has_yookassa:
+                    payment = create_payment_for_order(
+                        order=db_order,
+                        amount=db_order.total_price,
+                        description=f"Предзаказ #{db_order.id}",
+                        return_url=get_return_url(),
+                    )
+                    if payment:
+                        _, current_payment_url = update_order_from_payment(db_order, payment)
+
+                if not current_payment_url:
+                    current_payment_url = get_manual_payment_url(db_order) or ''
+                    if current_payment_url:
+                        db_order.payment_url = current_payment_url
+                        if db_order.payment_status == 'not_paid':
+                            db_order.payment_status = 'pending'
+                        db_order.save(update_fields=['payment_url', 'payment_status', 'updated_at'])
+
+                return db_order.payment_status, current_payment_url
+
+            _, payment_url = await _prepare_payment()
+            if payment_url:
+                order = await sync_to_async(Order.objects.get)(pk=order.id)
 
         if is_custom:
             response_text = "✅ <b>Заявка на индивидуальный букет принята!</b>\n\n"
@@ -1665,18 +2091,34 @@ async def create_order(message: Message, state: FSMContext):
             response_text = f"✅ <b>Заказ оформлен!</b>\n\n"
             response_text += f"📦 Номер заказа: #{order.id}\n"
             response_text += f"🌸 Товар: {product_name}\n"
+            if requested_delivery:
+                response_text += f"📅 Дата/время: {requested_delivery}\n"
             response_text += f"💰 Цена товара: {format_money(product_price_raw)} ₽\n"
             if discount > 0:
                 response_text += f"🎁 Скидка: {discount}%\n"
             response_text += f"🚗 Доставка: {format_money(delivery_cost)} ₽\n"
             response_text += f"💳 <b>Итого: {format_money(final_price)} ₽</b>\n\n"
-            response_text += f"⏱ Примерное время доставки: {delivery_info['duration']} минут\n\n"
-            response_text += f"📞 Мы свяжемся с вами в ближайшее время для подтверждения заказа."
+            if is_preorder:
+                response_text += "🌷 Это предзаказ. Для фиксации слота нужна оплата.\n\n"
+            else:
+                response_text += f"⏱ Примерное время доставки: {delivery_info['duration']} минут\n\n"
+            response_text += "📞 Мы свяжемся с вами в ближайшее время для подтверждения заказа."
         
         await state.clear()
         await message.answer(response_text, reply_markup=get_main_keyboard(), parse_mode=ParseMode.HTML)
 
-        # Оплата будет запрошена после статуса "Готов"
+        if is_preorder and payment_url:
+            keyboard_rows = [[InlineKeyboardButton(text="💳 Оплатить предзаказ", url=payment_url)]]
+            if has_yookassa and order.payment_id:
+                keyboard_rows.append([
+                    InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_payment_{order.id}")
+                ])
+            await message.answer(
+                "Оплатите заказ сейчас, чтобы закрепить за собой букет и время выдачи.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
+            )
+
+        await post_order_to_group(order.id)
         
     except Exception as e:
         logger.error(f"Ошибка создания заказа: {e}")
@@ -1722,6 +2164,7 @@ async def check_payment_status(callback: CallbackQuery):
         return
 
     new_status, _ = await sync_to_async(update_order_from_payment)(order, payment)
+    await refresh_order_group_message(order.id)
 
     status_labels = {
         'not_paid': 'Не оплачено',
@@ -1786,12 +2229,15 @@ async def show_my_orders(message: Message):
     status_labels = dict(Order.STATUS_CHOICES)
     status_icons = {
         'new': '🆕',
+        'processing': '🟡',
+        'ready': '📦',
+        'completed': '✅',
+        'cancelled': '❌',
+        'expired': '⌛',
+        # legacy
         'confirmed': '✅',
         'in_progress': '🛠️',
-        'ready': '📦',
         'delivering': '🚚',
-        'completed': '🏁',
-        'cancelled': '❌',
     }
     lines = []
     for order in orders:

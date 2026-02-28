@@ -44,12 +44,15 @@ def order_post_save(sender, instance: Order, created: bool, **kwargs):
     status_labels = dict(Order.STATUS_CHOICES)
     status_icons = {
         'new': '🆕',
-        'confirmed': '✅',
-        'in_progress': '🛠️',
+        'processing': '🛠️',
         'ready': '📦',
-        'delivering': '🚚',
         'completed': '🏁',
         'cancelled': '❌',
+        'expired': '⌛',
+        # legacy statuses (safety for old rows)
+        'confirmed': '✅',
+        'in_progress': '🛠️',
+        'delivering': '🚚',
     }
     old_label = status_labels.get(previous_status, previous_status)
     new_label = status_labels.get(instance.status, instance.status)

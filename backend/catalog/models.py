@@ -224,12 +224,11 @@ class Order(models.Model):
     """Заказ через Telegram"""
     STATUS_CHOICES = [
         ('new', 'Новый'),
-        ('confirmed', 'Подтвержден'),
-        ('in_progress', 'В работе'),
+        ('processing', 'В работе'),
         ('ready', 'Готов'),
-        ('delivering', 'Доставляется'),
         ('completed', 'Завершен'),
         ('cancelled', 'Отменен'),
+        ('expired', 'Просрочен'),
     ]
     PAYMENT_STATUS_CHOICES = [
         ('not_paid', 'Не оплачен'),
@@ -245,10 +244,16 @@ class Order(models.Model):
     phone_normalized = models.CharField('Телефон (нормализованный)', max_length=20, blank=True, db_index=True)
     address = models.TextField('Адрес доставки')
     comment = models.TextField('Комментарий', blank=True)
+    is_preorder = models.BooleanField('Предзаказ', default=False)
+    requested_delivery = models.CharField('Желаемая дата/время', max_length=120, blank=True)
     status = models.CharField('Статус', max_length=20, choices=STATUS_CHOICES, default='new')
     total_price = models.DecimalField('Итоговая цена', max_digits=10, decimal_places=2)
     discount_percent = models.IntegerField('Скидка %', default=0)
     has_subscription = models.BooleanField('Есть подписка', default=False)
+    service_chat_id = models.CharField('Служебный чат', max_length=100, blank=True)
+    service_message_id = models.BigIntegerField('ID служебного сообщения', blank=True, null=True)
+    processing_by_user_id = models.BigIntegerField('Обрабатывает (Telegram ID)', blank=True, null=True)
+    processing_by_username = models.CharField('Обрабатывает (username)', max_length=100, blank=True)
     ready_photo = models.ImageField('Фото готового букета', upload_to='orders/ready/', blank=True, null=True)
     payment_status = models.CharField(
         'Статус оплаты',
