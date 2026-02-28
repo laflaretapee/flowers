@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 # FSM States
 class OrderStates(StatesGroup):
+    waiting_for_quantity = State()
     waiting_for_name = State()
     waiting_for_phone = State()
     waiting_for_address = State()
@@ -324,6 +325,15 @@ def get_address_confirm_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text="✅ Подтвердить")],
         [KeyboardButton(text="✏️ Ввести вручную"), KeyboardButton(text="❌ Отмена")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+
+def get_quantity_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton(text="1"), KeyboardButton(text="3"), KeyboardButton(text="5")],
+        [KeyboardButton(text="7"), KeyboardButton(text="10"), KeyboardButton(text="15")],
+        [KeyboardButton(text="❌ Отмена")],
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
 
@@ -1465,6 +1475,7 @@ async def start_order_name_step(
     product_id: int | None,
     product_name: str,
     product_price: Decimal | None = None,
+    quantity: int = 1,
     is_subscribed: bool,
     promo_enabled: bool,
     discount_percent: int,
@@ -1472,10 +1483,14 @@ async def start_order_name_step(
     is_preorder: bool = False,
     requested_delivery: str = '',
 ):
+    quantity = max(1, int(quantity or 1))
     text = "🛒 <b>Оформление заказа</b>\n\n"
     text += f"🌸 {product_name}\n"
     if product_price is not None:
-        text += f"💰 Цена: {format_money(product_price)} ₽\n"
+        total_products = (product_price * Decimal(quantity)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        text += f"💰 Цена за шт: {format_money(product_price)} ₽\n"
+        text += f"🔢 Количество: {quantity}\n"
+        text += f"💳 Сумма товара: {format_money(total_products)} ₽\n"
     if is_preorder:
         requested_delivery_text = requested_delivery.strip() or "8 марта, удобное время"
         text += f"🌷 Предзаказ: {requested_delivery_text}\n"
@@ -1501,6 +1516,7 @@ async def start_order_name_step(
     await state.update_data(
         product_id=product_id,
         product_name=product_name,
+        order_quantity=quantity,
         is_subscribed=is_subscribed,
         promo_enabled=promo_enabled,
         discount_percent=discount_percent,
@@ -1513,6 +1529,7 @@ async def start_order_name_step(
         pending_order_is_subscribed=None,
         pending_order_promo_enabled=None,
         pending_order_discount_percent=None,
+        pending_order_quantity=None,
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=ReplyKeyboardRemove())
 
@@ -1536,34 +1553,23 @@ async def begin_order_flow(callback: CallbackQuery, state: FSMContext, product_i
     state_data = await state.get_data()
     preorder_mode = bool(state_data.get('preorder_mode'))
 
-    if preorder_mode:
-        await state.set_state(PreOrderStates.waiting_for_datetime)
-        await state.update_data(
-            pending_order_product_id=product_id,
-            pending_order_product_name=product_name,
-            pending_order_is_subscribed=is_subscribed,
-            pending_order_promo_enabled=promo_enabled,
-            pending_order_discount_percent=discount_percent,
-        )
-        await callback.message.answer(
-            "🌷 <b>Предзаказ на 8 марта</b>\n\n"
-            f"Вы выбрали: {product_name} ({format_money(price)} ₽)\n\n"
-            "Теперь укажите дату и время вручения (например: 8 марта, 12:00).\n"
-            "<i>/cancel — отмена</i>",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    await start_order_name_step(
-        callback.message,
-        state,
-        product_id=product_id,
-        product_name=product_name,
-        product_price=price,
-        is_subscribed=is_subscribed,
-        promo_enabled=promo_enabled,
-        discount_percent=discount_percent,
-        is_custom=False,
+    await state.set_state(OrderStates.waiting_for_quantity)
+    await state.update_data(
+        pending_order_product_id=product_id,
+        pending_order_product_name=product_name,
+        pending_order_product_price=str(price),
+        pending_order_is_subscribed=is_subscribed,
+        pending_order_promo_enabled=promo_enabled,
+        pending_order_discount_percent=discount_percent,
+        pending_order_preorder_mode=preorder_mode,
+    )
+    await callback.message.answer(
+        "🔢 <b>Выберите количество</b>\n\n"
+        f"{product_name}\n"
+        f"Цена за 1 шт: {format_money(price)} ₽\n\n"
+        "Отправьте число (например 7) или нажмите кнопку.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_quantity_keyboard(),
     )
 
 
@@ -1589,6 +1595,78 @@ async def start_preorder(message: Message, state: FSMContext):
     await send_catalog_menu(message)
 
 
+@router.message(OrderStates.waiting_for_quantity)
+async def process_order_quantity(message: Message, state: FSMContext):
+    if message.text in {"/cancel", "❌ Отмена"}:
+        await state.clear()
+        await message.answer("❌ Заказ отменен.", reply_markup=get_main_keyboard())
+        return
+
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("Введите количество числом. Пример: 5", reply_markup=get_quantity_keyboard())
+        return
+
+    quantity = int(raw)
+    if quantity < 1 or quantity > 999:
+        await message.answer("Количество должно быть от 1 до 999.", reply_markup=get_quantity_keyboard())
+        return
+
+    data = await state.get_data()
+    product_id = data.get('pending_order_product_id')
+    product_name = data.get('pending_order_product_name') or 'Букет'
+    product_price = to_decimal(data.get('pending_order_product_price') or '0')
+    is_subscribed = bool(data.get('pending_order_is_subscribed'))
+    promo_enabled = bool(data.get('pending_order_promo_enabled', True))
+    discount_percent = int(data.get('pending_order_discount_percent') or 10)
+    preorder_mode = bool(data.get('pending_order_preorder_mode'))
+
+    if not product_id:
+        await state.clear()
+        await message.answer(
+            "Не удалось найти выбранный букет. Выберите товар еще раз в каталоге.",
+            reply_markup=get_main_keyboard(),
+        )
+        return
+
+    if preorder_mode:
+        await state.set_state(PreOrderStates.waiting_for_datetime)
+        await state.update_data(
+            pending_order_quantity=quantity,
+            pending_order_product_id=product_id,
+            pending_order_product_name=product_name,
+            pending_order_product_price=str(product_price),
+            pending_order_is_subscribed=is_subscribed,
+            pending_order_promo_enabled=promo_enabled,
+            pending_order_discount_percent=discount_percent,
+        )
+        total_products = (product_price * Decimal(quantity)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        await message.answer(
+            "🌷 <b>Предзаказ на 8 марта</b>\n\n"
+            f"{product_name}\n"
+            f"Количество: {quantity}\n"
+            f"Сумма товара: {format_money(total_products)} ₽\n\n"
+            "Теперь укажите дату и время вручения (например: 8 марта, 12:00).\n"
+            "<i>/cancel — отмена</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    await start_order_name_step(
+        message,
+        state,
+        product_id=int(product_id),
+        product_name=product_name,
+        product_price=product_price,
+        quantity=quantity,
+        is_subscribed=is_subscribed,
+        promo_enabled=promo_enabled,
+        discount_percent=discount_percent,
+        is_custom=False,
+    )
+
+
 @router.message(PreOrderStates.waiting_for_datetime)
 async def process_preorder_datetime(message: Message, state: FSMContext):
     if message.text == "/cancel":
@@ -1604,6 +1682,8 @@ async def process_preorder_datetime(message: Message, state: FSMContext):
     data = await state.get_data()
     product_id = data.get('pending_order_product_id')
     product_name = data.get('pending_order_product_name') or 'Букет'
+    product_price = to_decimal(data.get('pending_order_product_price') or '0')
+    quantity = int(data.get('pending_order_quantity') or 1)
     is_subscribed = bool(data.get('pending_order_is_subscribed'))
     promo_enabled = bool(data.get('pending_order_promo_enabled', True))
     discount_percent = int(data.get('pending_order_discount_percent') or 10)
@@ -1621,6 +1701,8 @@ async def process_preorder_datetime(message: Message, state: FSMContext):
         state,
         product_id=int(product_id),
         product_name=product_name,
+        product_price=product_price,
+        quantity=quantity,
         is_subscribed=is_subscribed,
         promo_enabled=promo_enabled,
         discount_percent=discount_percent,
@@ -1945,6 +2027,7 @@ async def create_order(message: Message, state: FSMContext):
         
         product_id = data.get('product_id')
         discount = data.get('discount', 0)
+        order_quantity = max(1, int(data.get('order_quantity') or 1))
         is_custom = data.get('is_custom', False)
         is_preorder = bool(data.get('is_preorder', False))
         requested_delivery = (data.get('requested_delivery') or '').strip()
@@ -1977,21 +2060,24 @@ async def create_order(message: Message, state: FSMContext):
         )
 
         delivery_cost = to_decimal(delivery_info['cost'])
-        product_price_raw = Decimal('0')
-        product_price = Decimal('0')
+        product_price_raw = Decimal('0')  # price per item
+        products_subtotal_raw = Decimal('0')
+        product_price = Decimal('0')  # discounted subtotal for all items
 
         if is_custom:
             budget_value = parse_budget_value(custom_budget)
             if budget_value is not None:
                 product_price_raw = budget_value
+                products_subtotal_raw = budget_value
                 discount_ratio = (Decimal('100') - Decimal(discount)) / Decimal('100')
-                product_price = (product_price_raw * discount_ratio).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                product_price = (products_subtotal_raw * discount_ratio).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             else:
                 discount = 0
         else:
             product_price_raw = to_decimal(await sync_to_async(lambda: product.price)())
+            products_subtotal_raw = (product_price_raw * Decimal(order_quantity)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             discount_ratio = (Decimal('100') - Decimal(discount)) / Decimal('100')
-            product_price = (product_price_raw * discount_ratio).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            product_price = (products_subtotal_raw * discount_ratio).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         final_price = (product_price + delivery_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
@@ -2037,7 +2123,7 @@ async def create_order(message: Message, state: FSMContext):
                     product=product,
                     product_name=product_name,
                     price=product_price_raw,
-                    quantity=1
+                    quantity=1 if is_custom else order_quantity
                 )
                 return order
         
@@ -2091,9 +2177,11 @@ async def create_order(message: Message, state: FSMContext):
             response_text = f"✅ <b>Заказ оформлен!</b>\n\n"
             response_text += f"📦 Номер заказа: #{order.id}\n"
             response_text += f"🌸 Товар: {product_name}\n"
+            response_text += f"🔢 Количество: {order_quantity}\n"
             if requested_delivery:
                 response_text += f"📅 Дата/время: {requested_delivery}\n"
-            response_text += f"💰 Цена товара: {format_money(product_price_raw)} ₽\n"
+            response_text += f"💰 Цена за 1 шт: {format_money(product_price_raw)} ₽\n"
+            response_text += f"💳 Сумма товара: {format_money(products_subtotal_raw)} ₽\n"
             if discount > 0:
                 response_text += f"🎁 Скидка: {discount}%\n"
             response_text += f"🚗 Доставка: {format_money(delivery_cost)} ₽\n"
