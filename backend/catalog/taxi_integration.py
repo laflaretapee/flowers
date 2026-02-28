@@ -5,7 +5,8 @@ import requests
 from django.conf import settings
 import logging
 from decimal import Decimal
-import re
+
+from .delivery_tariffs import load_delivery_tariffs, normalize_address_text
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,8 @@ class TaxiDeliveryIntegration:
         self.yandex_taxi_clid = getattr(settings, 'YANDEX_TAXI_CLID', '')
         self.uber_api_key = getattr(settings, 'UBER_API_KEY', '')
         self.delivery_service = getattr(settings, 'TAXI_DELIVERY_SERVICE', 'yandex')  # yandex, uber, custom
-        # Фиксированные тарифы по населенным пунктам (матч по адресу доставки).
-        # Можно расширять по вашему прайсу.
-        self.fixed_location_tariffs: list[tuple[tuple[str, ...], Decimal, str]] = [
-            (("раевка", "раевский", "село раевский"), Decimal('250'), "Раевка / Раевский"),
-        ]
+        # Фиксированные тарифы по населенным пунктам (подгружаются из CSV).
+        self.fixed_location_tariffs = load_delivery_tariffs()
     
     def calculate_delivery_cost(self, from_address, to_address, order_weight=1):
         """
@@ -54,22 +52,14 @@ class TaxiDeliveryIntegration:
             # Базовая оценка для других сервисов
             return self._estimate_delivery(from_address, to_address)
 
-    def _normalize_address(self, address: str) -> str:
-        if not address:
-            return ''
-        normalized = address.lower().replace('ё', 'е')
-        normalized = re.sub(r'[^a-zа-я0-9\s\-]', ' ', normalized)
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
-        return normalized
-
     def _get_fixed_tariff_by_address(self, to_address: str):
-        normalized_address = self._normalize_address(to_address)
+        normalized_address = normalize_address_text(to_address)
         if not normalized_address:
             return None
 
         for aliases, cost, label in self.fixed_location_tariffs:
             for alias in aliases:
-                normalized_alias = self._normalize_address(alias)
+                normalized_alias = normalize_address_text(alias)
                 if normalized_alias and normalized_alias in normalized_address:
                     return {
                         'cost': cost,

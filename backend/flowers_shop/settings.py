@@ -223,3 +223,6 @@ YANDEX_TAXI_CLID = os.getenv('YANDEX_TAXI_CLID', '')
 YANDEX_GEOCODER_API_KEY = os.getenv('YANDEX_GEOCODER_API_KEY', '')
 UBER_API_KEY = os.getenv('UBER_API_KEY', '')
 TAXI_DELIVERY_SERVICE = os.getenv('TAXI_DELIVERY_SERVICE', 'yandex')  # yandex, uber, custom
+# CSV файл с фиксированными тарифами доставки (aliases,cost,label).
+# Если не задан, используется backend/catalog/data/delivery_tariffs.csv
+DELIVERY_TARIFFS_FILE = os.getenv('DELIVERY_TARIFFS_FILE', '')

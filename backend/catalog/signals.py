@@ -128,3 +128,21 @@ def order_post_save(sender, instance: Order, created: bool, **kwargs):
                 }
                 if not send_message(instance.telegram_user_id, pay_text, reply_markup=reply_markup, timeout=10):
                     logger.warning("Не удалось отправить ссылку на оплату заказа %s", instance.id)
+
+    # После завершения — сразу запросить отзыв со звездами.
+    if instance.status == 'completed':
+        review_text = (
+            f"🙏 Спасибо! Заказ #{instance.id} завершен.\n\n"
+            "Оцените, пожалуйста, наш сервис:"
+        )
+        review_markup = {
+            "inline_keyboard": [[
+                {"text": "⭐️", "callback_data": "rate_1"},
+                {"text": "⭐️", "callback_data": "rate_2"},
+                {"text": "⭐️", "callback_data": "rate_3"},
+                {"text": "⭐️", "callback_data": "rate_4"},
+                {"text": "⭐️", "callback_data": "rate_5"},
+            ]]
+        }
+        if not send_message(instance.telegram_user_id, review_text, reply_markup=review_markup, timeout=10):
+            logger.warning("Не удалось отправить запрос отзыва по заказу %s", instance.id)
