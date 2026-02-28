@@ -5,6 +5,7 @@ import requests
 from django.conf import settings
 import logging
 from decimal import Decimal
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,11 @@ class TaxiDeliveryIntegration:
         self.yandex_taxi_clid = getattr(settings, 'YANDEX_TAXI_CLID', '')
         self.uber_api_key = getattr(settings, 'UBER_API_KEY', '')
         self.delivery_service = getattr(settings, 'TAXI_DELIVERY_SERVICE', 'yandex')  # yandex, uber, custom
+        # Фиксированные тарифы по населенным пунктам (матч по адресу доставки).
+        # Можно расширять по вашему прайсу.
+        self.fixed_location_tariffs: list[tuple[tuple[str, ...], Decimal, str]] = [
+            (("раевка", "раевский", "село раевский"), Decimal('250'), "Раевка / Раевский"),
+        ]
     
     def calculate_delivery_cost(self, from_address, to_address, order_weight=1):
         """
@@ -36,6 +42,10 @@ class TaxiDeliveryIntegration:
                 'available': доступна ли доставка
             }
         """
+        fixed_tariff = self._get_fixed_tariff_by_address(to_address)
+        if fixed_tariff:
+            return fixed_tariff
+
         if self.delivery_service == 'yandex':
             return self._calculate_yandex_taxi(from_address, to_address, order_weight)
         elif self.delivery_service == 'uber':
@@ -43,6 +53,33 @@ class TaxiDeliveryIntegration:
         else:
             # Базовая оценка для других сервисов
             return self._estimate_delivery(from_address, to_address)
+
+    def _normalize_address(self, address: str) -> str:
+        if not address:
+            return ''
+        normalized = address.lower().replace('ё', 'е')
+        normalized = re.sub(r'[^a-zа-я0-9\s\-]', ' ', normalized)
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        return normalized
+
+    def _get_fixed_tariff_by_address(self, to_address: str):
+        normalized_address = self._normalize_address(to_address)
+        if not normalized_address:
+            return None
+
+        for aliases, cost, label in self.fixed_location_tariffs:
+            for alias in aliases:
+                normalized_alias = self._normalize_address(alias)
+                if normalized_alias and normalized_alias in normalized_address:
+                    return {
+                        'cost': cost,
+                        'duration': 30,
+                        'available': True,
+                        'service': 'прайс по адресу',
+                        'tariff_label': label,
+                        'note': f'Применен фиксированный тариф: {label}'
+                    }
+        return None
     
     def _calculate_yandex_taxi(self, from_address, to_address, order_weight):
         """Расчет через Yandex Taxi API"""
