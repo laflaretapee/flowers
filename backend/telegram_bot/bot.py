@@ -51,6 +51,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DELIVERY_MANUAL_NOTE = "Не получилось рассчитать стоимость доставки - введите стоимость сами"
+
 
 # FSM States
 class OrderStates(StatesGroup):
@@ -735,6 +737,7 @@ async def build_order_group_message(order_id: int) -> tuple[str, InlineKeyboardM
         f"{title} | Заказ #{order.id}\n"
         f"👤 {customer_name}\n"
         f"🔗 {profile_link}\n"
+        f"📍 {html.escape(order.address or 'Не указан')}\n"
         f"💐 {composition}\n"
         f"📅 {requested_delivery}\n"
         f"💳 {payment_label}\n"
@@ -749,6 +752,9 @@ async def build_order_group_message(order_id: int) -> tuple[str, InlineKeyboardM
             text += f"👨‍🔧 Обрабатывает: @{html.escape(processor_username)}\n"
         else:
             text += f"👨‍🔧 Обрабатывает: <a href=\"tg://user?id={order.processing_by_user_id}\">мастер</a>\n"
+
+    if DELIVERY_MANUAL_NOTE.lower() in (order.comment or "").lower():
+        text += f"⚠️ {html.escape(DELIVERY_MANUAL_NOTE)}.\n"
 
     return text.strip(), build_order_group_keyboard(order)
 
@@ -2059,7 +2065,10 @@ async def create_order(message: Message, state: FSMContext):
             order_weight=1
         )
 
+        delivery_manual_required = bool(delivery_info.get('requires_manual_price'))
         delivery_cost = to_decimal(delivery_info['cost'])
+        if delivery_manual_required:
+            delivery_cost = Decimal('0')
         product_price_raw = Decimal('0')  # price per item
         products_subtotal_raw = Decimal('0')
         product_price = Decimal('0')  # discounted subtotal for all items
@@ -2095,9 +2104,12 @@ async def create_order(message: Message, state: FSMContext):
             if custom_lines:
                 comment_parts.append("Запрос на индивидуальный букет:\n" + "\n".join(custom_lines))
 
-        comment_parts.append(
-            f"Доставка через {delivery_info.get('service', 'такси')}. Примерное время: {delivery_info['duration']} мин."
-        )
+        if delivery_manual_required:
+            comment_parts.append(DELIVERY_MANUAL_NOTE)
+        else:
+            comment_parts.append(
+                f"Доставка через {delivery_info.get('service', 'такси')}. Примерное время: {delivery_info['duration']} мин."
+            )
         order_comment = "\n\n".join(comment_parts).strip()
         
         # Создаем заказ в БД
@@ -2131,7 +2143,7 @@ async def create_order(message: Message, state: FSMContext):
 
         payment_url = ''
         has_yookassa = yookassa_enabled()
-        if is_preorder and final_price > 0:
+        if is_preorder and final_price > 0 and not delivery_manual_required:
             @sync_to_async
             def _prepare_payment() -> tuple[str, str]:
                 db_order = Order.objects.get(pk=order.id)
@@ -2184,10 +2196,19 @@ async def create_order(message: Message, state: FSMContext):
             response_text += f"💳 Сумма товара: {format_money(products_subtotal_raw)} ₽\n"
             if discount > 0:
                 response_text += f"🎁 Скидка: {discount}%\n"
-            response_text += f"🚗 Доставка: {format_money(delivery_cost)} ₽\n"
+            if delivery_manual_required:
+                response_text += "🚗 Доставка: стоимость уточним вручную менеджером\n"
+            else:
+                response_text += f"🚗 Доставка: {format_money(delivery_cost)} ₽\n"
             response_text += f"💳 <b>Итого: {format_money(final_price)} ₽</b>\n\n"
             if is_preorder:
-                response_text += "🌷 Это предзаказ. Для фиксации слота нужна оплата.\n\n"
+                if delivery_manual_required:
+                    response_text += (
+                        "🌷 Это предзаказ. Стоимость доставки пока не определена, "
+                        "менеджер уточнит и пришлет сумму к оплате.\n\n"
+                    )
+                else:
+                    response_text += "🌷 Это предзаказ. Для фиксации слота нужна оплата.\n\n"
             else:
                 response_text += f"⏱ Примерное время доставки: {delivery_info['duration']} минут\n\n"
             response_text += "📞 Мы свяжемся с вами в ближайшее время для подтверждения заказа."

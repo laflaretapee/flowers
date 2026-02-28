@@ -44,6 +44,22 @@ class TaxiDeliveryIntegration:
         if fixed_tariff:
             return fixed_tariff
 
+        # Если адрес написан свободным текстом, уточняем локацию через геокодер
+        # и пытаемся сопоставить по населенному пункту/району.
+        for geocoded_text in self._geocode_address_candidates(to_address):
+            fixed_tariff = self._get_fixed_tariff_by_address(geocoded_text)
+            if fixed_tariff:
+                fixed_tariff['note'] = (
+                    f"{fixed_tariff.get('note', 'Применен фиксированный тариф')} "
+                    f"(по данным геокодера: {geocoded_text})"
+                ).strip()
+                return fixed_tariff
+
+        # Если справочник тарифов загружен, он считается источником истины.
+        # Неугаданный адрес уходит в ручной расчет.
+        if self.fixed_location_tariffs:
+            return self._estimate_delivery(from_address, to_address)
+
         if self.delivery_service == 'yandex':
             return self._calculate_yandex_taxi(from_address, to_address, order_weight)
         elif self.delivery_service == 'uber':
@@ -61,6 +77,16 @@ class TaxiDeliveryIntegration:
             for alias in aliases:
                 normalized_alias = normalize_address_text(alias)
                 if normalized_alias and normalized_alias in normalized_address:
+                    if cost is None:
+                        return {
+                            'cost': Decimal('0'),
+                            'duration': 0,
+                            'available': False,
+                            'service': 'manual',
+                            'requires_manual_price': True,
+                            'tariff_label': label,
+                            'note': f'Не получилось рассчитать стоимость доставки автоматически ({label})',
+                        }
                     return {
                         'cost': cost,
                         'duration': 30,
@@ -123,6 +149,74 @@ class TaxiDeliveryIntegration:
             logger.error(f"Ошибка расчета доставки через Yandex Taxi: {e}")
         
         return self._estimate_delivery(from_address, to_address)
+
+    def _geocode_address_candidates(self, address: str) -> list[str]:
+        """Получить кандидаты адреса/локации из геокодера для сопоставления тарифа."""
+        api_key = getattr(settings, 'YANDEX_GEOCODER_API_KEY', '')
+        if not api_key:
+            return []
+        try:
+            url = "https://geocode-maps.yandex.ru/1.x/"
+            params = {
+                'geocode': address,
+                'format': 'json',
+                'apikey': api_key,
+                'results': 1,
+            }
+            response = requests.get(url, params=params, timeout=5)
+            if response.status_code >= 400:
+                return []
+            data = response.json()
+            features = (
+                data.get('response', {})
+                .get('GeoObjectCollection', {})
+                .get('featureMember', [])
+            )
+            if not features:
+                return []
+
+            geo_object = features[0].get('GeoObject', {})
+            meta = geo_object.get('metaDataProperty', {}).get('GeocoderMetaData', {})
+            address_meta = meta.get('Address', {}) or {}
+            components = address_meta.get('Components', []) or []
+
+            candidates: list[str] = []
+            full_text = (meta.get('text') or '').strip()
+            if full_text:
+                candidates.append(full_text)
+
+            formatted = (address_meta.get('formatted') or '').strip()
+            if formatted:
+                candidates.append(formatted)
+
+            for component in components:
+                name = (component.get('name') or '').strip()
+                kind = (component.get('kind') or '').strip().lower()
+                if not name:
+                    continue
+                # Для тарифа важны в первую очередь населенный пункт/район.
+                if kind in {'locality', 'district', 'area', 'province'}:
+                    candidates.append(name)
+
+            # Удаляем дубли и слишком общие значения.
+            stop_values = {
+                normalize_address_text('россия'),
+                normalize_address_text('российская федерация'),
+                normalize_address_text('республика башкортостан'),
+                normalize_address_text('башкортостан'),
+            }
+            unique: list[str] = []
+            seen: set[str] = set()
+            for item in candidates:
+                normalized_item = normalize_address_text(item)
+                if not normalized_item or normalized_item in stop_values or normalized_item in seen:
+                    continue
+                seen.add(normalized_item)
+                unique.append(item)
+            return unique
+        except Exception as exc:
+            logger.warning("Ошибка геокодирования текстового адреса %s: %s", address, exc)
+            return []
     
     def _calculate_uber(self, from_address, to_address, order_weight):
         """Расчет через Uber API"""
@@ -197,17 +291,14 @@ class TaxiDeliveryIntegration:
         return None
     
     def _estimate_delivery(self, from_address, to_address):
-        """Базовая оценка доставки (если API недоступно)"""
-        # Простая оценка: базовая стоимость + расстояние
-        base_cost = Decimal('200')  # Базовая стоимость доставки
-        estimated_duration = 45  # Примерное время в минутах
-        
+        """Fallback, когда не удалось определить точный тариф/маршрут."""
         return {
-            'cost': base_cost,
-            'duration': estimated_duration,
-            'available': True,
-            'service': 'estimated',
-            'note': 'Окончательная стоимость будет уточнена при оформлении заказа'
+            'cost': Decimal('0'),
+            'duration': 0,
+            'available': False,
+            'service': 'manual',
+            'requires_manual_price': True,
+            'note': 'Не получилось рассчитать стоимость доставки - введите стоимость сами'
         }
     
     def create_delivery_order(self, order_id, from_address, to_address, order_weight=1):
