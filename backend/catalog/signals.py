@@ -17,6 +17,21 @@ from .payments import (
 logger = logging.getLogger(__name__)
 
 
+def _build_transfer_payment_text(order: Order) -> str:
+    details = (order.transfer_details or "").strip()
+    text = (
+        f"💳 Оплата заказа #{order.id}\n\n"
+        "Принимаем оплату переводом напрямую магазину.\n"
+        "После перевода отправьте чек/скрин в этот чат.\n\n"
+    )
+    if details:
+        text += f"Реквизиты:\n{details}\n\n"
+    else:
+        text += "Реквизиты менеджер отправит отдельным сообщением.\n\n"
+    text += f"Сумма к оплате: {order.total_price} ₽"
+    return text
+
+
 @receiver(pre_save, sender=Order)
 def order_pre_save(sender, instance: Order, **kwargs):
     instance.phone_normalized = normalize_phone(instance.phone)
@@ -79,11 +94,20 @@ def order_post_save(sender, instance: Order, created: bool, **kwargs):
     if not delivered:
         logger.warning("Не удалось отправить уведомление о статусе заказа %s", instance.id)
 
-    # После статуса "Готов" — запрос оплаты (YooKassa или временная ссылка)
+    # После статуса "Готов" — запрос оплаты (перевод или онлайн).
     if instance.status == 'ready':
         if not instance.total_price or instance.total_price <= 0:
             return
         if instance.payment_status != 'succeeded':
+            if (instance.payment_method or 'transfer') == 'transfer':
+                if instance.payment_status == 'not_paid':
+                    instance.payment_status = 'pending'
+                    instance.save(update_fields=['payment_status', 'updated_at'])
+                pay_text = _build_transfer_payment_text(instance)
+                if not send_message(instance.telegram_user_id, pay_text, timeout=10):
+                    logger.warning("Не удалось отправить инструкции перевода по заказу %s", instance.id)
+                return
+
             payment_url = getattr(instance, 'payment_url', '')
             has_yookassa = yookassa_enabled()
 

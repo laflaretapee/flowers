@@ -62,9 +62,12 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ['id', 'customer_name', 'phone', 'status', 'payment_status', 'total_price', 'created_at']
+    list_display = [
+        'id', 'customer_name', 'phone', 'status', 'payment_method',
+        'payment_status', 'items_subtotal', 'delivery_price', 'total_price', 'created_at'
+    ]
     list_display_links = ['id', 'customer_name']  # Кликабельные ссылки на редактирование
-    list_filter = ['status', 'payment_status', 'created_at', 'has_subscription']
+    list_filter = ['status', 'payment_method', 'payment_status', 'created_at', 'has_subscription']
     search_fields = ['customer_name', 'phone', 'telegram_username']
     list_editable = ['status']  # Статус можно менять прямо в списке
     readonly_fields = ['created_at', 'updated_at', 'ready_photo_request_link']
@@ -77,11 +80,15 @@ class OrderAdmin(admin.ModelAdmin):
         ('Заказ', {
             'fields': (
                 'status',
+                'items_subtotal',
+                'delivery_price',
                 'total_price',
                 'discount_percent',
                 'has_subscription',
                 'ready_photo',
                 'ready_photo_request_link',
+                'payment_method',
+                'transfer_details',
                 'payment_status',
                 'payment_id',
                 'payment_url',

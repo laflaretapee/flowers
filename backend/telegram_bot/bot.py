@@ -75,6 +75,7 @@ class PreOrderStates(StatesGroup):
 
 class AdminStates(StatesGroup):
     waiting_for_ready_photo = State()
+    waiting_for_transfer_details = State()
 
 
 class ReviewStates(StatesGroup):
@@ -682,6 +683,7 @@ def order_status_title(status: str) -> str:
 
 def build_order_group_keyboard(order: Order) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
+    is_terminal = order.status in {'completed', 'cancelled', 'expired'}
     if order.status == 'new':
         rows.append([InlineKeyboardButton(text="🟡 Взять в работу", callback_data=f"svc_take_{order.id}")])
     elif order.status == 'processing':
@@ -692,6 +694,14 @@ def build_order_group_keyboard(order: Order) -> InlineKeyboardMarkup | None:
         rows.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"svc_cancel_{order.id}")])
         if order.payment_status != 'succeeded':
             rows.append([InlineKeyboardButton(text="⌛ Не оплатил (expired)", callback_data=f"svc_expire_{order.id}")])
+
+    if order.payment_method == 'transfer' and not is_terminal:
+        details_button = "✏️ Обновить реквизиты" if order.transfer_details else "💳 Указать реквизиты"
+        rows.append([InlineKeyboardButton(text=details_button, callback_data=f"svc_payreq_{order.id}")])
+        if order.payment_status != 'succeeded':
+            rows.append([InlineKeyboardButton(text="✅ Отметить оплаченным", callback_data=f"svc_paid_{order.id}")])
+        else:
+            rows.append([InlineKeyboardButton(text="↩️ Вернуть в «не оплачен»", callback_data=f"svc_unpaid_{order.id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
@@ -702,6 +712,48 @@ def payment_status_label(status: str) -> str:
         'succeeded': 'Оплачен',
         'canceled': 'Платеж отменен',
     }.get(status, status or '—')
+
+
+def payment_method_label(method: str) -> str:
+    return {
+        'transfer': 'Перевод',
+        'online': 'Онлайн',
+    }.get(method or '', method or '—')
+
+
+def build_transfer_payment_text(order: Order) -> str:
+    details = (order.transfer_details or '').strip()
+    text = (
+        f"💳 Оплата заказа #{order.id}\n\n"
+        "Для вашего удобства принимаем перевод напрямую магазину.\n"
+        "После перевода отправьте, пожалуйста, чек/скрин в этот чат.\n\n"
+    )
+    if details:
+        text += f"<b>Реквизиты для перевода:</b>\n<code>{html.escape(details)}</code>\n\n"
+    text += (
+        f"Сумма к оплате: <b>{format_money(to_decimal(order.total_price))} ₽</b>\n"
+        "Если есть вопросы, менеджер подскажет по оплате."
+    )
+    return text
+
+
+def calculate_order_breakdown(order: Order, items: list[OrderItem]) -> tuple[Decimal, Decimal, Decimal]:
+    raw_items_total = sum((to_decimal(it.price) * Decimal(it.quantity) for it in items), Decimal('0'))
+    discount_multiplier = (Decimal('100') - Decimal(order.discount_percent or 0)) / Decimal('100')
+    discounted_items_total = (raw_items_total * discount_multiplier).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    items_total = to_decimal(getattr(order, 'items_subtotal', 0) or 0)
+    if items_total <= 0:
+        items_total = discounted_items_total
+
+    delivery_price = to_decimal(getattr(order, 'delivery_price', 0) or 0)
+    if delivery_price <= 0:
+        delivery_price = (to_decimal(order.total_price) - items_total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        if delivery_price < 0:
+            delivery_price = Decimal('0')
+
+    total = to_decimal(order.total_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return items_total, delivery_price, total
 
 
 def format_items_for_group(items: list[OrderItem]) -> str:
@@ -732,15 +784,23 @@ async def build_order_group_message(order_id: int) -> tuple[str, InlineKeyboardM
     requested_delivery = html.escape((order.requested_delivery or '').strip() or 'Как можно скорее')
     title = order_status_title(order.status)
     payment_label = html.escape(payment_status_label(order.payment_status))
+    payment_method = html.escape(payment_method_label(order.payment_method))
+    items_total, delivery_price, total = calculate_order_breakdown(order, items)
+    manual_delivery = DELIVERY_MANUAL_NOTE.lower() in (order.comment or "").lower()
+    delivery_display = "уточняется вручную" if manual_delivery and delivery_price <= 0 else f"{format_money(delivery_price)} ₽"
 
     text = (
         f"{title} | Заказ #{order.id}\n"
         f"👤 {customer_name}\n"
         f"🔗 {profile_link}\n"
+        f"📞 {html.escape(order.phone or 'Не указан')}\n"
         f"📍 {html.escape(order.address or 'Не указан')}\n"
         f"💐 {composition}\n"
         f"📅 {requested_delivery}\n"
-        f"💳 {payment_label}\n"
+        f"🧾 Товары: {format_money(items_total)} ₽\n"
+        f"🚚 Доставка: {delivery_display}\n"
+        f"💰 Итого: {format_money(total)} ₽\n"
+        f"💳 Оплата: {payment_label} · {payment_method}\n"
     )
 
     if order.is_preorder:
@@ -753,8 +813,19 @@ async def build_order_group_message(order_id: int) -> tuple[str, InlineKeyboardM
         else:
             text += f"👨‍🔧 Обрабатывает: <a href=\"tg://user?id={order.processing_by_user_id}\">мастер</a>\n"
 
-    if DELIVERY_MANUAL_NOTE.lower() in (order.comment or "").lower():
+    if manual_delivery:
         text += f"⚠️ {html.escape(DELIVERY_MANUAL_NOTE)}.\n"
+
+    if order.payment_method == 'transfer':
+        if order.transfer_details:
+            text += f"💳 Реквизиты: <code>{html.escape(order.transfer_details)}</code>\n"
+        else:
+            text += "💳 Реквизиты: не указаны\n"
+
+    comment = (order.comment or '').strip()
+    if comment:
+        short_comment = comment if len(comment) <= 500 else (comment[:500] + "…")
+        text += f"💬 Комментарий: {html.escape(short_comment)}\n"
 
     return text.strip(), build_order_group_keyboard(order)
 
@@ -886,6 +957,25 @@ async def apply_group_order_action(
             order.save(update_fields=update_fields)
             return True, "Заказ помечен как expired"
 
+        if action == 'paid':
+            if order.payment_status == 'succeeded':
+                return False, "Оплата уже отмечена"
+            order.payment_status = 'succeeded'
+            order.payment_method = order.payment_method or 'transfer'
+            order.paid_at = timezone.now()
+            update_fields.extend(['payment_status', 'payment_method', 'paid_at'])
+            order.save(update_fields=update_fields)
+            return True, "Оплата отмечена"
+
+        if action == 'unpaid':
+            if order.payment_status == 'not_paid':
+                return False, "Заказ уже в статусе «не оплачен»"
+            order.payment_status = 'not_paid'
+            order.paid_at = None
+            update_fields.extend(['payment_status', 'paid_at'])
+            order.save(update_fields=update_fields)
+            return True, "Оплата сброшена"
+
         return False, "Неизвестное действие"
 
     return await _apply()
@@ -906,7 +996,7 @@ async def require_admin_callback(callback: CallbackQuery) -> bool:
 
 
 @router.callback_query(F.data.startswith("svc_"))
-async def service_group_order_actions(callback: CallbackQuery):
+async def service_group_order_actions(callback: CallbackQuery, state: FSMContext):
     if not await require_admin_callback(callback):
         return
 
@@ -923,6 +1013,17 @@ async def service_group_order_actions(callback: CallbackQuery):
         await callback.answer("Некорректный номер заказа", show_alert=True)
         return
 
+    if action == 'payreq':
+        await state.set_state(AdminStates.waiting_for_transfer_details)
+        await state.update_data(admin_transfer_order_id=order_id)
+        await callback.answer("Введите реквизиты переводом следующим сообщением")
+        await callback.message.answer(
+            f"💳 Введите реквизиты для заказа #{order_id} одним сообщением.\n\n"
+            "Пример: +7 900 000-00-00 (СБП, Иван И.)\n"
+            "/cancel — отмена"
+        )
+        return
+
     changed, result_text = await apply_group_order_action(
         order_id=order_id,
         action=action,
@@ -931,7 +1032,96 @@ async def service_group_order_actions(callback: CallbackQuery):
     )
     if changed:
         await refresh_order_group_message(order_id)
+        if action in {'paid', 'unpaid'}:
+            @sync_to_async
+            def _get_payment_meta():
+                order = Order.objects.filter(pk=order_id).first()
+                if not order:
+                    return None, None
+                return int(order.telegram_user_id), to_decimal(order.total_price)
+
+            chat_id, amount = await _get_payment_meta()
+            if chat_id:
+                try:
+                    if action == 'paid':
+                        await bot_instance.send_message(
+                            chat_id=chat_id,
+                            text=(
+                                f"✅ Оплата по заказу #{order_id} подтверждена.\n"
+                                f"Сумма: {format_money(amount)} ₽."
+                            ),
+                        )
+                    else:
+                        await bot_instance.send_message(
+                            chat_id=chat_id,
+                            text=(
+                                f"ℹ️ Оплата по заказу #{order_id} переведена в статус «не оплачено».\n"
+                                "Если вы уже переводили деньги, отправьте чек в этот чат."
+                            ),
+                        )
+                except Exception as exc:
+                    logger.warning("Не удалось отправить клиенту статус оплаты по заказу %s: %s", order_id, exc)
     await callback.answer(result_text, show_alert=not changed)
+
+
+@router.message(AdminStates.waiting_for_transfer_details)
+async def admin_receive_transfer_details(message: Message, state: FSMContext):
+    if not await require_admin_message(message):
+        return
+
+    text = (message.text or '').strip()
+    if text == "/cancel":
+        await state.clear()
+        await message.answer("Ок, отменено.", reply_markup=get_admin_keyboard())
+        return
+
+    if not text:
+        await message.answer("Отправьте реквизиты текстом одним сообщением.")
+        return
+
+    data = await state.get_data()
+    order_id = int(data.get('admin_transfer_order_id') or 0)
+    if not order_id:
+        await state.clear()
+        await message.answer("Не найден номер заказа. Повторите действие.", reply_markup=get_admin_keyboard())
+        return
+
+    @sync_to_async
+    def _save_details() -> Order | None:
+        order = Order.objects.filter(pk=order_id).first()
+        if not order:
+            return None
+        order.transfer_details = text
+        order.payment_method = 'transfer'
+        if order.payment_status == 'not_paid':
+            order.payment_status = 'pending'
+            order.save(update_fields=['transfer_details', 'payment_method', 'payment_status', 'updated_at', 'phone_normalized'])
+        else:
+            order.save(update_fields=['transfer_details', 'payment_method', 'updated_at', 'phone_normalized'])
+        return order
+
+    order = await _save_details()
+    if not order:
+        await state.clear()
+        await message.answer("Заказ не найден.", reply_markup=get_admin_keyboard())
+        return
+
+    await state.clear()
+    await refresh_order_group_message(order.id)
+
+    try:
+        await bot_instance.send_message(
+            chat_id=order.telegram_user_id,
+            text=build_transfer_payment_text(order),
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        logger.warning("Не удалось отправить реквизиты клиенту по заказу %s: %s", order.id, exc)
+
+    await message.answer(
+        f"✅ Реквизиты сохранены для заказа #{order.id} и отправлены клиенту.",
+        reply_markup=get_admin_keyboard(),
+    )
 
 
 @router.message(Command("admin"))
@@ -1019,6 +1209,9 @@ async def build_admin_order_detail(order_id: int) -> tuple[str, InlineKeyboardMa
         return order, items
 
     order, items = await _fetch()
+    items_total, delivery_price, total = calculate_order_breakdown(order, items)
+    manual_delivery = DELIVERY_MANUAL_NOTE.lower() in (order.comment or "").lower()
+    delivery_display = "уточняется вручную" if manual_delivery and delivery_price <= 0 else f"{format_money(delivery_price)} ₽"
 
     icon = order_status_icon(order.status)
     created = timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M')
@@ -1032,8 +1225,15 @@ async def build_admin_order_detail(order_id: int) -> tuple[str, InlineKeyboardMa
         text += f"📅 {order.requested_delivery}\n"
     if order.is_preorder:
         text += "🌷 Предзаказ: да\n"
-    text += f"💳 Итог: {format_money(to_decimal(order.total_price))} ₽\n"
-    text += f"💳 Оплата: {payment_status_label(order.payment_status)}\n"
+    text += f"🧾 Товары: {format_money(items_total)} ₽\n"
+    text += f"🚚 Доставка: {delivery_display}\n"
+    text += f"💰 Итог: {format_money(total)} ₽\n"
+    text += f"💳 Оплата: {payment_status_label(order.payment_status)} · {payment_method_label(order.payment_method)}\n"
+    if order.payment_method == 'transfer':
+        if order.transfer_details:
+            text += f"💳 Реквизиты: <code>{html.escape(order.transfer_details)}</code>\n"
+        else:
+            text += "💳 Реквизиты: не указаны\n"
     if order.processing_by_user_id or order.processing_by_username:
         assignee = f"@{order.processing_by_username}" if order.processing_by_username else f"id={order.processing_by_user_id}"
         text += f"👨‍🔧 Обрабатывает: {assignee}\n"
@@ -1061,6 +1261,9 @@ async def build_admin_order_detail(order_id: int) -> tuple[str, InlineKeyboardMa
     ])
     buttons.append([
         InlineKeyboardButton(text="⌛ Просрочить", callback_data=f"admin_status_{order.id}_expired"),
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="💳 Реквизиты перевода", callback_data=f"admin_payreq_{order.id}"),
     ])
 
     if order.ready_photo:
@@ -1138,6 +1341,22 @@ async def admin_order_ready_photo_request(callback: CallbackQuery, state: FSMCon
         "<i>/cancel — отмена</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardRemove()
+    )
+
+
+@router.callback_query(F.data.startswith("admin_payreq_"))
+async def admin_order_payment_details_request(callback: CallbackQuery, state: FSMContext):
+    if not await require_admin_callback(callback):
+        return
+    await callback.answer()
+    order_id = int(callback.data.split("_")[2])
+    await state.set_state(AdminStates.waiting_for_transfer_details)
+    await state.update_data(admin_transfer_order_id=order_id)
+    await callback.message.answer(
+        f"💳 Введите реквизиты для заказа #{order_id} одним сообщением.\n\n"
+        "Пример: +7 900 000-00-00 (СБП, Иван И.)\n"
+        "/cancel — отмена",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 
@@ -2045,6 +2264,8 @@ async def create_order(message: Message, state: FSMContext):
         phone = data.get('phone', 'Не указан')
         address = data.get('address', 'Не указан')
         comment = data.get('comment', '')
+        payment_flow = (getattr(settings, 'PAYMENT_FLOW', 'transfer') or 'transfer').strip().lower()
+        use_transfer_payment = payment_flow != 'online'
         if not requested_delivery and custom_deadline:
             requested_delivery = custom_deadline
 
@@ -2125,9 +2346,12 @@ async def create_order(message: Message, state: FSMContext):
                     comment=order_comment,
                     is_preorder=is_preorder,
                     requested_delivery=requested_delivery,
+                    items_subtotal=product_price,
+                    delivery_price=delivery_cost,
                     total_price=final_price,
                     discount_percent=discount,
-                    has_subscription=is_subscribed
+                    has_subscription=is_subscribed,
+                    payment_method='transfer' if use_transfer_payment else 'online',
                 )
                 
                 OrderItem.objects.create(
@@ -2143,7 +2367,7 @@ async def create_order(message: Message, state: FSMContext):
 
         payment_url = ''
         has_yookassa = yookassa_enabled()
-        if is_preorder and final_price > 0 and not delivery_manual_required:
+        if not use_transfer_payment and is_preorder and final_price > 0 and not delivery_manual_required:
             @sync_to_async
             def _prepare_payment() -> tuple[str, str]:
                 db_order = Order.objects.get(pk=order.id)
@@ -2207,11 +2431,22 @@ async def create_order(message: Message, state: FSMContext):
                         "🌷 Это предзаказ. Стоимость доставки пока не определена, "
                         "менеджер уточнит и пришлет сумму к оплате.\n\n"
                     )
+                elif use_transfer_payment:
+                    response_text += (
+                        "🌷 Это предзаказ. Оплата принимается переводом после подтверждения заказа.\n"
+                        "Менеджер пришлет реквизиты в этом чате.\n\n"
+                    )
                 else:
                     response_text += "🌷 Это предзаказ. Для фиксации слота нужна оплата.\n\n"
             else:
                 response_text += f"⏱ Примерное время доставки: {delivery_info['duration']} минут\n\n"
             response_text += "📞 Мы свяжемся с вами в ближайшее время для подтверждения заказа."
+
+        if use_transfer_payment and not is_preorder:
+            response_text += (
+                "\n\n💳 Оплата: переводом по реквизитам магазина. "
+                "Реквизиты и подтверждение оплаты отправит менеджер в этом чате."
+            )
         
         await state.clear()
         await message.answer(response_text, reply_markup=get_main_keyboard(), parse_mode=ParseMode.HTML)
@@ -2225,6 +2460,11 @@ async def create_order(message: Message, state: FSMContext):
             await message.answer(
                 "Оплатите заказ сейчас, чтобы закрепить за собой букет и время выдачи.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
+            )
+        elif is_preorder and use_transfer_payment:
+            await message.answer(
+                "Менеджер отправит реквизиты перевода после проверки заказа. "
+                "Это безопасно: платеж идет напрямую магазину, а подтверждение оплаты вы получите в чате."
             )
 
         await post_order_to_group(order.id)
@@ -2255,6 +2495,13 @@ async def check_payment_status(callback: CallbackQuery):
     order = await _get_order()
     if not order:
         await callback.message.answer("Заказ не найден.")
+        return
+
+    if getattr(order, 'payment_method', '') == 'transfer':
+        await callback.message.answer(
+            "По этому заказу оплата принимается переводом. "
+            "Менеджер пришлет реквизиты и подтвердит оплату вручную."
+        )
         return
 
     if not order.payment_id:

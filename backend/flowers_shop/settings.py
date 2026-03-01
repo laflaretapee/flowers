@@ -207,6 +207,10 @@ YOOKASSA_RETURN_URL = os.getenv('YOOKASSA_RETURN_URL', SITE_URL)
 # Temporary / manual payment fallback (used when YooKassa is not configured).
 # Supports placeholders: {order_id}, {amount}, {telegram_user_id}.
 MANUAL_PAYMENT_URL_TEMPLATE = os.getenv('MANUAL_PAYMENT_URL_TEMPLATE', '')
+# Способ оплаты в боте:
+# transfer - менеджер вручную отправляет реквизиты перевода
+# online - подключается YooKassa/ссылка оплаты
+PAYMENT_FLOW = os.getenv('PAYMENT_FLOW', 'transfer').strip().lower() or 'transfer'
 
 # Promo settings
 PROMO_DISCOUNT_PERCENT = env_int('PROMO_DISCOUNT_PERCENT', 10)

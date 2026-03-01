@@ -236,6 +236,10 @@ class Order(models.Model):
         ('succeeded', 'Оплачен'),
         ('canceled', 'Отменен'),
     ]
+    PAYMENT_METHOD_CHOICES = [
+        ('transfer', 'Перевод'),
+        ('online', 'Онлайн'),
+    ]
     
     telegram_user_id = models.BigIntegerField('Telegram ID пользователя')
     telegram_username = models.CharField('Telegram username', max_length=100, blank=True)
@@ -247,6 +251,8 @@ class Order(models.Model):
     is_preorder = models.BooleanField('Предзаказ', default=False)
     requested_delivery = models.CharField('Желаемая дата/время', max_length=120, blank=True)
     status = models.CharField('Статус', max_length=20, choices=STATUS_CHOICES, default='new')
+    items_subtotal = models.DecimalField('Сумма товаров', max_digits=10, decimal_places=2, default=0)
+    delivery_price = models.DecimalField('Стоимость доставки', max_digits=10, decimal_places=2, default=0)
     total_price = models.DecimalField('Итоговая цена', max_digits=10, decimal_places=2)
     discount_percent = models.IntegerField('Скидка %', default=0)
     has_subscription = models.BooleanField('Есть подписка', default=False)
@@ -261,6 +267,13 @@ class Order(models.Model):
         choices=PAYMENT_STATUS_CHOICES,
         default='not_paid'
     )
+    payment_method = models.CharField(
+        'Способ оплаты',
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        default='transfer',
+    )
+    transfer_details = models.CharField('Реквизиты перевода', max_length=255, blank=True)
     payment_id = models.CharField('ID платежа YooKassa', max_length=100, blank=True)
     payment_url = models.URLField('Ссылка на оплату', blank=True)
     paid_at = models.DateTimeField('Дата оплаты', blank=True, null=True)
