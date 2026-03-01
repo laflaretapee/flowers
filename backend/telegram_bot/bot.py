@@ -52,6 +52,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DELIVERY_MANUAL_NOTE = "Не получилось рассчитать стоимость доставки - введите стоимость сами"
+CARD_PAYMENT_MAINTENANCE_NOTE = "Оплата по карте временно на техническом обслуживании."
 
 
 # FSM States
@@ -115,6 +116,15 @@ def parse_budget_value(text: str) -> Decimal | None:
         return Decimal(raw)
     except Exception:
         return None
+
+
+def is_cancel_command(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = text.strip().lower()
+    if normalized == "❌ отмена":
+        return True
+    return bool(re.match(r"^/cancel(?:@\w+)?$", normalized))
 
 
 async def fetch_user_avatar_bytes(user_id: int) -> bytes | None:
@@ -335,7 +345,7 @@ def get_address_confirm_keyboard() -> ReplyKeyboardMarkup:
 def get_quantity_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text="1"), KeyboardButton(text="3"), KeyboardButton(text="5")],
-        [KeyboardButton(text="7"), KeyboardButton(text="10"), KeyboardButton(text="15")],
+        [KeyboardButton(text="7"), KeyboardButton(text="9"), KeyboardButton(text="15")],
         [KeyboardButton(text="❌ Отмена")],
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
@@ -725,7 +735,8 @@ def build_transfer_payment_text(order: Order) -> str:
     details = (order.transfer_details or '').strip()
     text = (
         f"💳 Оплата заказа #{order.id}\n\n"
-        "Для вашего удобства принимаем перевод напрямую магазину.\n"
+        f"{CARD_PAYMENT_MAINTENANCE_NOTE}\n"
+        "Сейчас принимаем перевод напрямую магазину.\n"
         "После перевода отправьте, пожалуйста, чек/скрин в этот чат.\n\n"
     )
     if details:
@@ -1014,6 +1025,12 @@ async def service_group_order_actions(callback: CallbackQuery, state: FSMContext
         return
 
     if action == 'payreq':
+        current_state = await state.get_state()
+        current_data = await state.get_data()
+        current_order_id = int(current_data.get('admin_transfer_order_id') or 0)
+        if current_state == AdminStates.waiting_for_transfer_details.state and current_order_id == order_id:
+            await callback.answer("Режим ввода реквизитов для этого заказа уже активен")
+            return
         await state.set_state(AdminStates.waiting_for_transfer_details)
         await state.update_data(admin_transfer_order_id=order_id)
         await callback.answer("Введите реквизиты переводом следующим сообщением")
@@ -1070,7 +1087,7 @@ async def admin_receive_transfer_details(message: Message, state: FSMContext):
         return
 
     text = (message.text or '').strip()
-    if text == "/cancel":
+    if is_cancel_command(text):
         await state.clear()
         await message.answer("Ок, отменено.", reply_markup=get_admin_keyboard())
         return
@@ -1350,6 +1367,12 @@ async def admin_order_payment_details_request(callback: CallbackQuery, state: FS
         return
     await callback.answer()
     order_id = int(callback.data.split("_")[2])
+    current_state = await state.get_state()
+    current_data = await state.get_data()
+    current_order_id = int(current_data.get('admin_transfer_order_id') or 0)
+    if current_state == AdminStates.waiting_for_transfer_details.state and current_order_id == order_id:
+        await callback.answer("Режим ввода реквизитов для этого заказа уже активен")
+        return
     await state.set_state(AdminStates.waiting_for_transfer_details)
     await state.update_data(admin_transfer_order_id=order_id)
     await callback.message.answer(
@@ -1810,10 +1833,18 @@ async def start_order(callback: CallbackQuery, state: FSMContext):
 async def start_preorder(message: Message, state: FSMContext):
     await state.clear()
     await state.update_data(preorder_mode=True)
+    payment_flow = (getattr(settings, 'PAYMENT_FLOW', 'transfer') or 'transfer').strip().lower()
+    if payment_flow == 'online':
+        payment_line = "Для предзаказа будет сразу создана ссылка на оплату."
+    else:
+        payment_line = (
+            f"{CARD_PAYMENT_MAINTENANCE_NOTE} "
+            "После подтверждения заказа менеджер отправит реквизиты перевода."
+        )
     await message.answer(
         "🌷 <b>Режим предзаказа включен</b>\n\n"
         "Выберите букет в каталоге. После выбора укажете дату и время вручения.\n"
-        "Для предзаказа будет сразу создана ссылка на оплату.",
+        f"{payment_line}",
         parse_mode=ParseMode.HTML,
         reply_markup=get_main_keyboard(),
     )
@@ -2433,7 +2464,8 @@ async def create_order(message: Message, state: FSMContext):
                     )
                 elif use_transfer_payment:
                     response_text += (
-                        "🌷 Это предзаказ. Оплата принимается переводом после подтверждения заказа.\n"
+                        f"🌷 Это предзаказ. {CARD_PAYMENT_MAINTENANCE_NOTE}\n"
+                        "Оплата принимается переводом после подтверждения заказа.\n"
                         "Менеджер пришлет реквизиты в этом чате.\n\n"
                     )
                 else:
@@ -2444,7 +2476,8 @@ async def create_order(message: Message, state: FSMContext):
 
         if use_transfer_payment and not is_preorder:
             response_text += (
-                "\n\n💳 Оплата: переводом по реквизитам магазина. "
+                f"\n\n💳 {CARD_PAYMENT_MAINTENANCE_NOTE} "
+                "Оплата: переводом по реквизитам магазина. "
                 "Реквизиты и подтверждение оплаты отправит менеджер в этом чате."
             )
         
@@ -2463,6 +2496,7 @@ async def create_order(message: Message, state: FSMContext):
             )
         elif is_preorder and use_transfer_payment:
             await message.answer(
+                f"{CARD_PAYMENT_MAINTENANCE_NOTE} "
                 "Менеджер отправит реквизиты перевода после проверки заказа. "
                 "Это безопасно: платеж идет напрямую магазину, а подтверждение оплаты вы получите в чате."
             )
@@ -2499,6 +2533,7 @@ async def check_payment_status(callback: CallbackQuery):
 
     if getattr(order, 'payment_method', '') == 'transfer':
         await callback.message.answer(
+            f"{CARD_PAYMENT_MAINTENANCE_NOTE} "
             "По этому заказу оплата принимается переводом. "
             "Менеджер пришлет реквизиты и подтвердит оплату вручную."
         )

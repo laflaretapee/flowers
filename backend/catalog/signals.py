@@ -15,13 +15,15 @@ from .payments import (
 )
 
 logger = logging.getLogger(__name__)
+CARD_PAYMENT_MAINTENANCE_NOTE = "Оплата по карте временно на техническом обслуживании."
 
 
 def _build_transfer_payment_text(order: Order) -> str:
     details = (order.transfer_details or "").strip()
     text = (
         f"💳 Оплата заказа #{order.id}\n\n"
-        "Принимаем оплату переводом напрямую магазину.\n"
+        f"{CARD_PAYMENT_MAINTENANCE_NOTE}\n"
+        "Сейчас принимаем оплату переводом напрямую магазину.\n"
         "После перевода отправьте чек/скрин в этот чат.\n\n"
     )
     if details:
