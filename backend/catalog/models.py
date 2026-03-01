@@ -319,6 +319,33 @@ class BotAdmin(models.Model):
         return f"Админ #{self.pk}"
 
 
+class TransferPaymentTemplate(models.Model):
+    """Шаблон реквизитов для оплаты переводом."""
+
+    name = models.CharField('Название', max_length=120)
+    details = models.CharField('Реквизиты', max_length=255)
+    sort_order = models.IntegerField('Порядок', default=0)
+    is_active = models.BooleanField('Активен', default=True)
+    is_default = models.BooleanField('По умолчанию', default=False)
+    created_at = models.DateTimeField('Создан', auto_now_add=True)
+    updated_at = models.DateTimeField('Обновлен', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Шаблон реквизитов'
+        verbose_name_plural = 'Шаблоны реквизитов'
+        ordering = ['sort_order', 'name', 'id']
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def get_current_template(cls):
+        template = cls.objects.filter(is_active=True, is_default=True).order_by('sort_order', 'id').first()
+        if template:
+            return template
+        return cls.objects.filter(is_active=True).order_by('sort_order', 'id').first()
+
+
 class OrderItem(models.Model):
     """Элемент заказа"""
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items', verbose_name='Заказ')

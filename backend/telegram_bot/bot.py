@@ -33,7 +33,17 @@ from django.db.models import Q
 from django.db import transaction
 from asgiref.sync import sync_to_async
 
-from catalog.models import Product, Category, HeroSection, BotAdmin, Order, OrderItem, Review, normalize_phone
+from catalog.models import (
+    Product,
+    Category,
+    HeroSection,
+    BotAdmin,
+    Order,
+    OrderItem,
+    Review,
+    TransferPaymentTemplate,
+    normalize_phone,
+)
 from catalog.taxi_integration import TaxiDeliveryIntegration
 from catalog.payments import (
     update_order_from_payment,
@@ -697,7 +707,7 @@ def build_order_group_keyboard(order: Order) -> InlineKeyboardMarkup | None:
     if order.status == 'new':
         rows.append([InlineKeyboardButton(text="🟡 Взять в работу", callback_data=f"svc_take_{order.id}")])
     elif order.status == 'processing':
-        rows.append([InlineKeyboardButton(text="🟢 Готово", callback_data=f"svc_ready_{order.id}")])
+        rows.append([InlineKeyboardButton(text="📦 Готово (с фото)", callback_data=f"svc_ready_{order.id}")])
         rows.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"svc_cancel_{order.id}")])
     elif order.status == 'ready':
         rows.append([InlineKeyboardButton(text="✅ Завершить", callback_data=f"svc_complete_{order.id}")])
@@ -706,7 +716,13 @@ def build_order_group_keyboard(order: Order) -> InlineKeyboardMarkup | None:
             rows.append([InlineKeyboardButton(text="⌛ Не оплатил (expired)", callback_data=f"svc_expire_{order.id}")])
 
     if order.payment_method == 'transfer' and not is_terminal:
-        details_button = "✏️ Обновить реквизиты" if order.transfer_details else "💳 Указать реквизиты"
+        rows.append([
+            InlineKeyboardButton(
+                text="✅ Подтвердить актуальные реквизиты",
+                callback_data=f"svc_paycurrent_{order.id}",
+            )
+        ])
+        details_button = "✏️ Обновить реквизиты вручную" if order.transfer_details else "💳 Ввести реквизиты вручную"
         rows.append([InlineKeyboardButton(text=details_button, callback_data=f"svc_payreq_{order.id}")])
         if order.payment_status != 'succeeded':
             rows.append([InlineKeyboardButton(text="✅ Отметить оплаченным", callback_data=f"svc_paid_{order.id}")])
@@ -746,6 +762,45 @@ def build_transfer_payment_text(order: Order) -> str:
         "Если есть вопросы, менеджер подскажет по оплате."
     )
     return text
+
+
+@sync_to_async
+def apply_current_transfer_template(order_id: int) -> tuple[bool, str]:
+    order = Order.objects.filter(pk=order_id).first()
+    if not order:
+        return False, "Заказ не найден"
+
+    template = TransferPaymentTemplate.get_current_template()
+    if not template:
+        return False, "Нет активного шаблона реквизитов. Добавьте его в админке."
+
+    order.transfer_details = (template.details or '').strip()
+    order.payment_method = 'transfer'
+    update_fields = ['transfer_details', 'payment_method', 'updated_at', 'phone_normalized']
+    if order.payment_status == 'not_paid':
+        order.payment_status = 'pending'
+        update_fields.append('payment_status')
+    order.save(update_fields=update_fields)
+    return True, template.name
+
+
+async def notify_customer_transfer_details(order_id: int) -> None:
+    @sync_to_async
+    def _fetch() -> Order | None:
+        return Order.objects.filter(pk=order_id).first()
+
+    order = await _fetch()
+    if not order:
+        return
+
+    try:
+        await bot_instance.send_message(
+            chat_id=order.telegram_user_id,
+            text=build_transfer_payment_text(order),
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        logger.warning("Не удалось отправить реквизиты клиенту по заказу %s: %s", order.id, exc)
 
 
 def calculate_order_breakdown(order: Order, items: list[OrderItem]) -> tuple[Decimal, Decimal, Decimal]:
@@ -935,16 +990,7 @@ async def apply_group_order_action(
             return True, "Взято в работу"
 
         if action == 'ready':
-            if order.status not in {'new', 'processing'}:
-                return False, "Нельзя перевести в «Готов»"
-            order.status = 'ready'
-            if not order.processing_by_user_id:
-                order.processing_by_user_id = actor_id
-                order.processing_by_username = actor_username_clean
-                update_fields.extend(['processing_by_user_id', 'processing_by_username'])
-            update_fields.append('status')
-            order.save(update_fields=update_fields)
-            return True, "Заказ отмечен как готовый"
+            return False, "Для статуса «Готов» нужно загрузить фото букета"
 
         if action == 'complete':
             if order.status not in {'processing', 'ready'}:
@@ -1039,6 +1085,28 @@ async def service_group_order_actions(callback: CallbackQuery, state: FSMContext
             "Пример: +7 900 000-00-00 (СБП, Иван И.)\n"
             "/cancel — отмена"
         )
+        return
+
+    if action == 'ready':
+        await state.set_state(AdminStates.waiting_for_ready_photo)
+        await state.update_data(admin_ready_order_id=order_id)
+        await callback.answer("Пришлите фото готового букета")
+        await callback.message.answer(
+            f"📷 Отправьте фото готового букета для заказа #{order_id}.\n\n"
+            "После фото заказ получит статус «Готов», а клиент получит уведомление.\n"
+            "/cancel — отмена",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    if action == 'paycurrent':
+        changed, info = await apply_current_transfer_template(order_id)
+        if changed:
+            await refresh_order_group_message(order_id)
+            await notify_customer_transfer_details(order_id)
+            await callback.answer(f"Реквизиты подтверждены по шаблону: {info}")
+        else:
+            await callback.answer(info, show_alert=True)
         return
 
     changed, result_text = await apply_group_order_action(
@@ -1280,6 +1348,9 @@ async def build_admin_order_detail(order_id: int) -> tuple[str, InlineKeyboardMa
         InlineKeyboardButton(text="⌛ Просрочить", callback_data=f"admin_status_{order.id}_expired"),
     ])
     buttons.append([
+        InlineKeyboardButton(text="✅ Актуальные реквизиты", callback_data=f"svc_paycurrent_{order.id}"),
+    ])
+    buttons.append([
         InlineKeyboardButton(text="💳 Реквизиты перевода", callback_data=f"admin_payreq_{order.id}"),
     ])
 
@@ -1365,14 +1436,14 @@ async def admin_order_ready_photo_request(callback: CallbackQuery, state: FSMCon
 async def admin_order_payment_details_request(callback: CallbackQuery, state: FSMContext):
     if not await require_admin_callback(callback):
         return
-    await callback.answer()
     order_id = int(callback.data.split("_")[2])
     current_state = await state.get_state()
     current_data = await state.get_data()
     current_order_id = int(current_data.get('admin_transfer_order_id') or 0)
     if current_state == AdminStates.waiting_for_transfer_details.state and current_order_id == order_id:
-        await callback.answer("Режим ввода реквизитов для этого заказа уже активен")
+        await callback.answer("Режим уже активен")
         return
+    await callback.answer()
     await state.set_state(AdminStates.waiting_for_transfer_details)
     await state.update_data(admin_transfer_order_id=order_id)
     await callback.message.answer(
@@ -1387,10 +1458,12 @@ async def admin_order_payment_details_request(callback: CallbackQuery, state: FS
 async def admin_order_ready_photo_receive(message: Message, state: FSMContext):
     if not await require_admin_message(message):
         return
+    is_private_chat = bool(getattr(message.chat, 'type', '') == 'private')
+    done_markup = get_admin_keyboard() if is_private_chat else ReplyKeyboardRemove()
 
-    if message.text == "/cancel":
+    if is_cancel_command(message.text):
         await state.clear()
-        await message.answer("Ок, отменено.", reply_markup=get_admin_keyboard())
+        await message.answer("Ок, отменено.", reply_markup=done_markup)
         return
 
     if not message.photo and not message.document:
@@ -1434,7 +1507,7 @@ async def admin_order_ready_photo_receive(message: Message, state: FSMContext):
         prev_status, customer_chat_id = await _save()
     except Exception as exc:
         logger.warning("Ready photo save failed: %s", exc)
-        await message.answer("❌ Не удалось сохранить фото.", reply_markup=get_admin_keyboard())
+        await message.answer("❌ Не удалось сохранить фото.", reply_markup=done_markup)
         await state.clear()
         return
 
@@ -1450,7 +1523,7 @@ async def admin_order_ready_photo_receive(message: Message, state: FSMContext):
 
     await state.clear()
     await refresh_order_group_message(order_id)
-    await message.answer(f"✅ Фото сохранено, заказ #{order_id} помечен как «Готов».", reply_markup=get_admin_keyboard())
+    await message.answer(f"✅ Фото сохранено, заказ #{order_id} помечен как «Готов».", reply_markup=done_markup)
 
 
 @router.message(F.text == "📤 Экспорт заказов")

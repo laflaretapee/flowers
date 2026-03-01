@@ -6,7 +6,7 @@ from django.utils.html import format_html
 from telegram_bot.sender import send_message
 from .models import (
     Category, Product, ProductImage, Review, Order, OrderItem, BotAdmin,
-    SiteSettings, HeroSection, PromoBanner, DeliveryInfo
+    SiteSettings, HeroSection, PromoBanner, DeliveryInfo, TransferPaymentTemplate
 )
 
 
@@ -164,6 +164,22 @@ class BotAdminAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'created_at']
     search_fields = ['username', 'telegram_user_id', 'note']
     list_editable = ['is_active']
+
+
+@admin.register(TransferPaymentTemplate)
+class TransferPaymentTemplateAdmin(admin.ModelAdmin):
+    list_display = ['name', 'short_details', 'is_default', 'is_active', 'sort_order', 'updated_at']
+    list_filter = ['is_default', 'is_active']
+    search_fields = ['name', 'details']
+    list_editable = ['is_default', 'is_active', 'sort_order']
+
+    def short_details(self, obj):
+        text = (obj.details or '').strip()
+        if len(text) > 90:
+            return text[:90] + '...'
+        return text
+
+    short_details.short_description = 'Реквизиты'
 
 
 admin.site.register(ProductImage)
