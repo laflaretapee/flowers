@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import viewsets, filters, mixins
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -15,6 +17,10 @@ from .serializers import (
     ProductListSerializer, SiteSettingsSerializer, HeroSectionSerializer, PromoBannerSerializer, DeliveryInfoSerializer
 )
 from .payments import yookassa_enabled, map_payment_status, notify_payment_status
+
+logger = logging.getLogger(__name__)
+
+
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.filter(is_active=True)
     serializer_class = CategorySerializer
@@ -74,7 +80,7 @@ class ReviewViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
         return queryset.order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(is_published=True)
+        serializer.save(is_published=False)
 
 
 @cache_page(60)
@@ -129,7 +135,15 @@ def yookassa_webhook(request):
     if order is None:
         order = Order.objects.filter(payment_id=payment_id).first()
     if order is None:
+        logger.warning("YooKassa webhook: order not found (payment_id=%s, order_id=%s)", payment_id, order_id)
         return Response({'detail': 'Order not found'}, status=200)
+
+    if order.payment_id and order.payment_id != payment_id:
+        logger.warning(
+            "YooKassa webhook: payment_id mismatch for order #%s (expected %s, got %s)",
+            order.id, order.payment_id, payment_id,
+        )
+        return Response({'detail': 'Payment id mismatch'}, status=400)
 
     prev_status = order.payment_status
     new_status = map_payment_status(status)

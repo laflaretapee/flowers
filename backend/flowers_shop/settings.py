@@ -29,8 +29,15 @@ def env_int(name: str, default: int) -> int:
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-this-in-production')
-DEBUG = env_bool('DEBUG', True)
+_secret_key = os.getenv('SECRET_KEY', '')
+DEBUG = env_bool('DEBUG', False)
+
+if not _secret_key and not DEBUG:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is required in production (DEBUG=False). "
+        "Generate one with: python -c \"from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())\""
+    )
+SECRET_KEY = _secret_key or 'django-insecure-dev-only-key-do-not-use-in-production'
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
@@ -141,7 +148,11 @@ STORAGES = {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
     },
     'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        'BACKEND': (
+            'django.contrib.staticfiles.storage.StaticFilesStorage'
+            if DEBUG
+            else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+        ),
     },
 }
 
@@ -174,7 +185,7 @@ CORS_ALLOWED_ORIGINS = [
 if RENDER_EXTERNAL_HOSTNAME:
     CORS_ALLOWED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+CORS_ALLOW_ALL_ORIGINS = False
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
@@ -230,3 +241,15 @@ TAXI_DELIVERY_SERVICE = os.getenv('TAXI_DELIVERY_SERVICE', 'yandex')  # yandex, 
 # CSV файл с фиксированными тарифами доставки (aliases,cost,label).
 # Если не задан, используется backend/catalog/data/delivery_tariffs.csv
 DELIVERY_TARIFFS_FILE = os.getenv('DELIVERY_TARIFFS_FILE', '')
+
+# Shop address (used for delivery cost calculation)
+SHOP_ADDRESS = os.getenv(
+    'SHOP_ADDRESS',
+    'Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120',
+)
+
+# ── Security hardening ───────────────────────────────────────────
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
