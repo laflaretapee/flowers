@@ -15,9 +15,35 @@ function getApiOrigin() {
 
 function resolveMediaUrl(value) {
   if (!value) return '';
-  const str = String(value);
-  if (str.startsWith('/')) return `${getApiOrigin()}${str}`;
-  return str;
+  const str = String(value).trim();
+  if (!str) return '';
+
+  if (str.startsWith('data:') || str.startsWith('blob:')) {
+    return str;
+  }
+
+  try {
+    const url = new URL(str, window.location.origin);
+    const isMediaPath = url.pathname.startsWith('/media/');
+    const isLocalDevHost = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(url.hostname);
+
+    if (isMediaPath) {
+      return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+    }
+
+    if (window.location.protocol === 'https:' && url.protocol === 'http:' && url.hostname === window.location.hostname) {
+      url.protocol = 'https:';
+    }
+
+    if (isLocalDevHost && isMediaPath) {
+      return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+    }
+
+    return url.toString();
+  } catch (e) {
+    if (str.startsWith('/')) return `${window.location.origin}${str}`;
+    return str;
+  }
 }
 
 // Global settings cache
@@ -456,7 +482,7 @@ function renderHero(hero) {
   
   const heroBg = document.querySelector('.hero-bg');
   if (heroBg && hero.image) {
-    heroBg.style.backgroundImage = `url('${hero.image}')`;
+    heroBg.style.backgroundImage = `url('${resolveMediaUrl(hero.image)}')`;
   }
   
   const heroBenefits = document.querySelector('.hero-benefits');

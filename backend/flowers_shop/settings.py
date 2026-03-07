@@ -253,6 +253,11 @@ SHOP_ADDRESS = os.getenv(
     'Трактовая улица, 78А, село Раевский, Альшеевский район, Республика Башкортостан, 452120',
 )
 
+# Upload limits
+MAX_UPLOAD_SIZE_MB = env_int('MAX_UPLOAD_SIZE_MB', 128)
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
 # ── Security hardening ───────────────────────────────────────────
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG

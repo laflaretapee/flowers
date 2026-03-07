@@ -5,22 +5,42 @@ from .models import (
 )
 
 
+def media_url(file_field):
+    if not file_field:
+        return None
+    try:
+        return file_field.url
+    except Exception:
+        return None
+
+
 class ProductImageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = ProductImage
         fields = ['id', 'image', 'order']
 
+    def get_image(self, obj):
+        return media_url(getattr(obj, 'image', None))
+
 
 class CategorySerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = Category
         fields = ['id', 'name', 'slug', 'description', 'image', 'order']
+
+    def get_image(self, obj):
+        return media_url(getattr(obj, 'image', None))
 
 
 class ProductSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     images = ProductImageSerializer(many=True, read_only=True)
     average_rating = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
@@ -29,6 +49,9 @@ class ProductSerializer(serializers.ModelSerializer):
             'price', 'hide_price', 'image', 'category', 'is_active', 'is_popular',
             'order', 'images', 'average_rating'
         ]
+
+    def get_image(self, obj):
+        return media_url(getattr(obj, 'image', None))
     
     def get_average_rating(self, obj):
         annotated = getattr(obj, 'average_rating', None)
@@ -42,6 +65,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class ProductListSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -50,6 +74,9 @@ class ProductListSerializer(serializers.ModelSerializer):
             'price', 'hide_price', 'image', 'category', 'is_active', 'is_popular',
             'order'
         ]
+
+    def get_image(self, obj):
+        return media_url(getattr(obj, 'image', None))
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -62,14 +89,7 @@ class ReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
     def get_avatar_url(self, obj):
-        if not getattr(obj, 'avatar', None):
-            return None
-        try:
-            url = obj.avatar.url
-        except Exception:
-            return None
-        request = self.context.get('request')
-        return request.build_absolute_uri(url) if request else url
+        return media_url(getattr(obj, 'avatar', None))
 
 
 class SiteSettingsSerializer(serializers.ModelSerializer):
@@ -83,6 +103,8 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
 
 
 class HeroSectionSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = HeroSection
         fields = [
@@ -90,6 +112,9 @@ class HeroSectionSerializer(serializers.ModelSerializer):
             'secondary_button_text', 'secondary_button_link', 'image',
             'badge_number', 'badge_text', 'benefit_1', 'benefit_2', 'benefit_3'
         ]
+
+    def get_image(self, obj):
+        return media_url(getattr(obj, 'image', None))
 
 
 class PromoBannerSerializer(serializers.ModelSerializer):
