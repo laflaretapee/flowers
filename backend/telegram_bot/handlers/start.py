@@ -7,12 +7,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from asgiref.sync import sync_to_async
 
-from django.conf import settings
-
 from catalog.models import Product
 
 from ..keyboards import get_main_keyboard, get_subscribe_keyboard
-from ..services import check_user_subscription
+from ..services import check_user_subscription, get_promo_config
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +56,7 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
         return
 
-    discount = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
-    promo_enabled = getattr(settings, 'PROMO_ENABLED', True)
+    promo_enabled, discount = await get_promo_config()
 
     text = f"🌸 Добро пожаловать в <b>Цветочная Лавка</b>, {user.first_name}!\n\n"
     text += "Мы создаем авторские букеты из свежих цветов с доставкой по городу.\n\n"
@@ -96,12 +93,18 @@ async def check_subscription_callback(callback: CallbackQuery, state: FSMContext
     if is_subscribed:
         await callback.answer("✅ Подписка подтверждена!", show_alert=True)
 
-        discount = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
-        text = (
-            f"🎉 <b>Отлично!</b> Вы подписаны на наш канал!\n\n"
-            f"🎁 Вам доступна скидка <b>{discount}%</b> на первый полученный заказ по номеру телефона!\n\n"
-            "Выберите действие в меню ниже 👇"
-        )
+        promo_enabled, discount = await get_promo_config()
+        if promo_enabled:
+            text = (
+                f"🎉 <b>Отлично!</b> Вы подписаны на наш канал!\n\n"
+                f"🎁 Вам доступна скидка <b>{discount}%</b> на первый полученный заказ по номеру телефона!\n\n"
+                "Выберите действие в меню ниже 👇"
+            )
+        else:
+            text = (
+                "🎉 <b>Отлично!</b> Вы подписаны на наш канал!\n\n"
+                "Выберите действие в меню ниже 👇"
+            )
         await callback.message.answer(text, reply_markup=get_main_keyboard(), parse_mode=ParseMode.HTML)
         await callback.message.delete()
 

@@ -24,6 +24,16 @@ class SiteSettings(models.Model):
     vk_link = models.URLField('VKontakte', blank=True)
     telegram_channel_link = models.URLField('Telegram канал', blank=True)
     footer_text = models.CharField('Текст в подвале', max_length=300, default='Сделано с любовью к цветам')
+    promo_enabled = models.BooleanField(
+        'Акция со скидкой включена',
+        default=False,
+        help_text='Включает скидку в боте и промо-баннер на сайте.',
+    )
+    promo_discount_percent = models.PositiveIntegerField(
+        'Размер скидки, %',
+        default=10,
+        help_text='Используется только если акция включена.',
+    )
     
     class Meta:
         verbose_name = 'Настройки сайта'
@@ -40,6 +50,13 @@ class SiteSettings(models.Model):
     def get_settings(cls):
         obj, created = cls.objects.get_or_create(pk=1)
         return obj
+
+    @classmethod
+    def get_promo_config(cls) -> tuple[bool, int]:
+        site_settings = cls.get_settings()
+        enabled = bool(site_settings.promo_enabled)
+        discount_percent = max(0, int(site_settings.promo_discount_percent or 0))
+        return enabled, discount_percent
 
 
 class HeroSection(models.Model):

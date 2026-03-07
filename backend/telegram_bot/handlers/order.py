@@ -33,7 +33,7 @@ from ..constants import DELIVERY_MANUAL_NOTE, CARD_PAYMENT_MAINTENANCE_NOTE
 from ..states import OrderStates, CustomBouquetStates, PreOrderStates
 from ..utils import to_decimal, format_money, parse_budget_value
 from ..keyboards import get_main_keyboard, get_quantity_keyboard, get_address_confirm_keyboard
-from ..services import check_user_subscription, post_order_to_group
+from ..services import check_user_subscription, get_promo_config, post_order_to_group
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +95,7 @@ async def begin_order_flow(callback: CallbackQuery, state: FSMContext, product_i
     user_id = callback.from_user.id
     is_subscribed = await check_user_subscription(user_id)
 
-    promo_enabled = getattr(settings, 'PROMO_ENABLED', True)
-    discount_percent = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
+    promo_enabled, discount_percent = await get_promo_config()
 
     price = to_decimal(await sync_to_async(lambda: product.price)())
     product_name = await sync_to_async(lambda: product.name)()
@@ -165,8 +164,8 @@ async def process_order_quantity(message: Message, state: FSMContext):
     product_name = data.get('pending_order_product_name') or 'Букет'
     product_price = to_decimal(data.get('pending_order_product_price') or '0')
     is_subscribed = bool(data.get('pending_order_is_subscribed'))
-    promo_enabled = bool(data.get('pending_order_promo_enabled', True))
-    discount_percent = int(data.get('pending_order_discount_percent') or 10)
+    promo_enabled = bool(data.get('pending_order_promo_enabled', False))
+    discount_percent = int(data.get('pending_order_discount_percent') or 0)
     preorder_mode = bool(data.get('pending_order_preorder_mode'))
 
     if not product_id:
@@ -234,8 +233,8 @@ async def process_preorder_datetime(message: Message, state: FSMContext):
     product_price = to_decimal(data.get('pending_order_product_price') or '0')
     quantity = int(data.get('pending_order_quantity') or 1)
     is_subscribed = bool(data.get('pending_order_is_subscribed'))
-    promo_enabled = bool(data.get('pending_order_promo_enabled', True))
-    discount_percent = int(data.get('pending_order_discount_percent') or 10)
+    promo_enabled = bool(data.get('pending_order_promo_enabled', False))
+    discount_percent = int(data.get('pending_order_discount_percent') or 0)
 
     if not product_id:
         await state.clear()
@@ -321,8 +320,7 @@ async def _begin_custom_order_contact(message: Message, state: FSMContext):
     user_id = message.from_user.id
     is_subscribed = await check_user_subscription(user_id)
 
-    promo_enabled = getattr(settings, 'PROMO_ENABLED', True)
-    discount_percent = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
+    promo_enabled, discount_percent = await get_promo_config()
 
     await message.answer(
         "💐 <b>Индивидуальный букет</b>\n\n"
@@ -471,8 +469,8 @@ async def process_order_phone(message: Message, state: FSMContext):
 
     normalized_phone = normalize_phone(phone)
     data = await state.get_data()
-    promo_enabled = data.get('promo_enabled', True)
-    discount_percent = data.get('discount_percent', 10)
+    promo_enabled = data.get('promo_enabled', False)
+    discount_percent = data.get('discount_percent', 0)
     is_subscribed = data.get('is_subscribed', False)
 
     has_completed_orders = False

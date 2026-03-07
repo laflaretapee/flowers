@@ -77,7 +77,8 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
         model = SiteSettings
         fields = [
             'site_name', 'phone', 'address', 'telegram_bot_link',
-            'instagram_link', 'vk_link', 'telegram_channel_link', 'footer_text'
+            'instagram_link', 'vk_link', 'telegram_channel_link', 'footer_text',
+            'promo_enabled', 'promo_discount_percent',
         ]
 
 

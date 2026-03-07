@@ -475,8 +475,7 @@ function renderPromo(promo) {
   if (!promoBanner) return;
   
   if (!promo || !promo.is_active) {
-    // Keep static fallback banner from HTML when promo is not configured in API.
-    promoBanner.style.display = '';
+    promoBanner.style.display = 'none';
     return;
   }
   promoBanner.style.display = '';

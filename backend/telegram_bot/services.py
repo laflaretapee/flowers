@@ -21,6 +21,7 @@ from catalog.models import (
     BotAdmin,
     Order,
     OrderItem,
+    SiteSettings,
     TransferPaymentTemplate,
 )
 
@@ -92,6 +93,19 @@ async def is_bot_admin(user_id: int, username: str | None) -> bool:
         return qs.exists()
 
     return await sync_to_async(_check)()
+
+
+async def get_promo_config() -> tuple[bool, int]:
+    def _fetch() -> tuple[bool, int]:
+        try:
+            return SiteSettings.get_promo_config()
+        except Exception as exc:
+            logger.warning("Не удалось получить настройки акции из БД: %s", exc)
+            enabled = bool(getattr(settings, 'PROMO_ENABLED', False))
+            discount = max(0, int(getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10) or 0))
+            return enabled, discount
+
+    return await sync_to_async(_fetch)()
 
 
 # ── File downloads ───────────────────────────────────────────────

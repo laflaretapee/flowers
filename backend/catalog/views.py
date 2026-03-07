@@ -87,7 +87,8 @@ class ReviewViewSet(mixins.CreateModelMixin, viewsets.ReadOnlyModelViewSet):
 @api_view(['GET'])
 def site_content(request):
     """Получить весь контент сайта одним запросом"""
-    settings = SiteSettings.get_settings()
+    site_settings = SiteSettings.get_settings()
+    promo_enabled, _ = SiteSettings.get_promo_config()
     hero = HeroSection.get_hero()
     promo = PromoBanner.get_promo()
     delivery = DeliveryInfo.get_delivery_info()
@@ -101,9 +102,9 @@ def site_content(request):
     context = {'request': request}
     
     return Response({
-        'settings': SiteSettingsSerializer(settings, context=context).data,
+        'settings': SiteSettingsSerializer(site_settings, context=context).data,
         'hero': HeroSectionSerializer(hero, context=context).data,
-        'promo': PromoBannerSerializer(promo, context=context).data if promo.is_active else None,
+        'promo': PromoBannerSerializer(promo, context=context).data if promo.is_active and promo_enabled else None,
         'delivery': DeliveryInfoSerializer(delivery, context=context).data,
         'categories': CategorySerializer(categories, many=True, context=context).data,
         'products': ProductListSerializer(products, many=True, context=context).data,

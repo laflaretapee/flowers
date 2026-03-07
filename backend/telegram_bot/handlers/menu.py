@@ -8,14 +8,13 @@ from aiogram import F, Router
 from aiogram.enums import ParseMode
 from aiogram.types import Message
 from asgiref.sync import sync_to_async
-from django.conf import settings
 from django.utils import timezone
 
 from catalog.models import Order, Review
 
 from ..utils import format_money
 from ..keyboards import get_main_keyboard
-from ..services import check_user_subscription
+from ..services import check_user_subscription, get_promo_config
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,15 @@ router = Router()
 async def show_promotions(message: Message):
     user_id = message.from_user.id
     is_subscribed = await check_user_subscription(user_id)
-    discount = getattr(settings, 'PROMO_DISCOUNT_PERCENT', 10)
+    promo_enabled, discount = await get_promo_config()
+
+    if not promo_enabled:
+        await message.answer(
+            "🎁 <b>Акции</b>\n\n"
+            "Сейчас активных скидок нет. Новые предложения появятся здесь.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
 
     last_order = await sync_to_async(
         Order.objects.filter(telegram_user_id=user_id).order_by('-created_at').first

@@ -187,7 +187,18 @@ admin.site.register(ProductImage)
 
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(admin.ModelAdmin):
-    list_display = ['site_name', 'phone']
+    list_display = ['site_name', 'phone', 'promo_enabled', 'promo_discount_percent']
+    fieldsets = (
+        ('Основное', {
+            'fields': ('site_name', 'phone', 'address', 'footer_text')
+        }),
+        ('Ссылки', {
+            'fields': ('telegram_bot_link', 'telegram_channel_link', 'instagram_link', 'vk_link')
+        }),
+        ('Акция за подписку', {
+            'fields': ('promo_enabled', 'promo_discount_percent')
+        }),
+    )
     
     def has_add_permission(self, request):
         return not SiteSettings.objects.exists()
